@@ -31,6 +31,23 @@ def test_letterbox_box_roundtrip() -> None:
     torch.testing.assert_close(restored, torch.from_numpy(boxes))
 
 
+def test_restore_boxes_clips_coordinates_to_cube() -> None:
+    metadata = LetterboxMeta(
+        scale=2.0,
+        pad_x=10.0,
+        pad_y=20.0,
+        input_width=220,
+        input_height=140,
+        original_width=100,
+        original_height=50,
+    )
+    boxes = torch.tensor([[-10.0, 0.0, 240.0, 160.0]])
+    restored = restore_boxes(boxes, metadata)
+    torch.testing.assert_close(
+        restored, torch.tensor([[0.0, 0.0, 100.0, 50.0]])
+    )
+
+
 def test_voc_parser_clips_and_drops_without_mutating_source(tmp_path: Path) -> None:
     annotation = tmp_path / "one.xml"
     annotation.write_text(

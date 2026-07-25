@@ -60,6 +60,13 @@ CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m torch.distributed.run \
   -m hod26.train --config configs/final.yaml
 ```
 
+Final 3,000-image training (fixed 120 epochs, no validation holdout):
+
+```bash
+CUDA_VISIBLE_DEVICES=1 hod26-train \
+  --config configs/full_120.yaml --full-data
+```
+
 ## Declared external pretraining
 
 The RGB branch can be initialized from the public Ultralytics YOLO11l COCO

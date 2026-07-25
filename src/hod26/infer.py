@@ -51,6 +51,7 @@ def infer(
             confidence=float(config["inference"]["confidence"]),
             nms_iou=float(config["inference"]["nms_iou"]),
             max_detections=int(config["inference"]["max_detections"]),
+            multi_label=bool(config["inference"].get("multi_label", True)),
         )
         for image_id, image_detections in zip(
             batch["image_id"], detections, strict=True
@@ -123,4 +124,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

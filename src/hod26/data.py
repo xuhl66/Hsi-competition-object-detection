@@ -463,8 +463,14 @@ def restore_boxes(boxes: torch.Tensor, metadata: LetterboxMeta) -> torch.Tensor:
     restored = boxes.clone()
     restored[:, [0, 2]] = (restored[:, [0, 2]] - metadata.pad_x) / metadata.scale
     restored[:, [1, 3]] = (restored[:, [1, 3]] - metadata.pad_y) / metadata.scale
-    restored[:, [0, 2]].clamp_(0, metadata.original_width)
-    restored[:, [1, 3]].clamp_(0, metadata.original_height)
+    # Advanced indexing returns a copy, so an in-place clamp on that temporary
+    # tensor would not update ``restored``. Assign the clipped values back.
+    restored[:, [0, 2]] = restored[:, [0, 2]].clamp(
+        0, metadata.original_width
+    )
+    restored[:, [1, 3]] = restored[:, [1, 3]].clamp(
+        0, metadata.original_height
+    )
     return restored
 
 

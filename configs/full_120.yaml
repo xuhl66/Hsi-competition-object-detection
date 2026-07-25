@@ -1,7 +1,7 @@
 project:
   seed: 3407
   storage: storage
-  run_name: hyperdet_huff_p2_l
+  run_name: hyperdet_huff_p2_l_full120
 
 data:
   root: data/raw
@@ -35,7 +35,7 @@ model:
   object_refine_gain: 0.75
 
 train:
-  epochs: 240
+  epochs: 120
   batch_size_per_gpu: 18
   global_batch_size: 36
   optimizer: adamw
@@ -73,5 +73,5 @@ inference:
   multi_label: false
   max_detections: 300
   tta: false
-  output: storage/submissions/submission.csv
+  output: storage/submissions/full120_phase1.csv
   include_id: true

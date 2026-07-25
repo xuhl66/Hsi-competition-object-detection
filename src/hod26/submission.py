@@ -67,62 +67,67 @@ def validate_submission(
     expected = {str(sample["image_id"]): sample for sample in expected_samples}
     columns = submission_columns(include_id)
     errors: list[str] = []
+    error_count = 0
     seen_images: set[str] = set()
     class_counts = [0] * num_classes
     rows = 0
 
+    def add_error(message: str) -> None:
+        nonlocal error_count
+        error_count += 1
+        if len(errors) < 100:
+            errors.append(message)
+
     with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames != columns:
-            errors.append(
+            add_error(
                 f"header mismatch: expected {columns}, got {reader.fieldnames}"
             )
         for row_number, row in enumerate(reader, start=2):
             rows += 1
-            if len(errors) >= 100:
-                break
             try:
                 image_id = str(row["image_id"]).strip()
                 class_id = int(row["class_id"])
                 confidence = float(row["confidence"])
                 coordinates = [float(row[key]) for key in ("x1", "y1", "x2", "y2")]
                 if include_id and int(row["id"]) != row_number - 2:
-                    errors.append(
+                    add_error(
                         f"row {row_number}: id must be contiguous from zero"
                     )
                     continue
             except (KeyError, TypeError, ValueError) as exc:
-                errors.append(f"row {row_number}: invalid value ({exc})")
+                add_error(f"row {row_number}: invalid value ({exc})")
                 continue
 
             if image_id not in expected:
-                errors.append(f"row {row_number}: unknown image_id {image_id!r}")
+                add_error(f"row {row_number}: unknown image_id {image_id!r}")
                 continue
             if not 0 <= class_id < num_classes:
-                errors.append(f"row {row_number}: class_id {class_id} out of range")
+                add_error(f"row {row_number}: class_id {class_id} out of range")
             elif 0 <= class_id < num_classes:
                 class_counts[class_id] += 1
             if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
-                errors.append(f"row {row_number}: confidence must be in [0, 1]")
+                add_error(f"row {row_number}: confidence must be in [0, 1]")
             if not all(math.isfinite(value) for value in coordinates):
-                errors.append(f"row {row_number}: non-finite coordinate")
+                add_error(f"row {row_number}: non-finite coordinate")
                 continue
             x1, y1, x2, y2 = coordinates
             sample = expected[image_id]
             width, height = float(sample["width"]), float(sample["height"])
             epsilon = 1e-3
             if x1 < -epsilon or y1 < -epsilon or x2 > width + epsilon or y2 > height + epsilon:
-                errors.append(
+                add_error(
                     f"row {row_number}: box outside {int(width)}x{int(height)} cube"
                 )
             if x2 <= x1 or y2 <= y1:
-                errors.append(f"row {row_number}: degenerate box")
+                add_error(f"row {row_number}: degenerate box")
             seen_images.add(image_id)
 
     if rows == 0:
-        errors.append("submission contains no detections")
+        add_error("submission contains no detections")
     report = {
-        "valid": not errors,
+        "valid": error_count == 0,
         "path": str(csv_path.resolve()),
         "rows": rows,
         "expected_test_images": len(expected),
@@ -130,6 +135,7 @@ def validate_submission(
         "images_without_detections": len(expected) - len(seen_images),
         "class_detection_counts": class_counts,
         "columns": columns,
+        "error_count": error_count,
         "errors": errors,
     }
     return report
@@ -160,4 +166,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

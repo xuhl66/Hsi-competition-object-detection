@@ -376,6 +376,9 @@ def train(args: argparse.Namespace) -> Path | None:
                     confidence=float(config["inference"]["confidence"]),
                     nms_iou=float(config["inference"]["nms_iou"]),
                     max_detections=int(config["inference"]["max_detections"]),
+                    multi_label=bool(
+                        config["inference"].get("multi_label", True)
+                    ),
                     amp=amp_enabled,
                 )
                 current = float(metrics["map_50_95"])

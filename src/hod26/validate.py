@@ -51,6 +51,7 @@ def main() -> None:
         confidence=float(config["inference"]["confidence"]),
         nms_iou=float(config["inference"]["nms_iou"]),
         max_detections=int(config["inference"]["max_detections"]),
+        multi_label=bool(config["inference"].get("multi_label", True)),
         amp=bool(config["train"]["amp"]),
     )
     result = {
@@ -68,4 +69,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -20,6 +20,7 @@ def postprocess_predictions(
     confidence: float,
     nms_iou: float,
     max_detections: int,
+    multi_label: bool = True,
 ) -> list[torch.Tensor]:
     prediction = model_output[0] if isinstance(model_output, tuple) else model_output
     detections = non_max_suppression(
@@ -28,7 +29,8 @@ def postprocess_predictions(
         iou_thres=nms_iou,
         max_det=max_detections,
         nc=num_classes,
-        multi_label=True,
+        multi_label=multi_label,
+        in_place=False,
     )
     restored: list[torch.Tensor] = []
     for result, image_metadata in zip(detections, metadata, strict=True):
@@ -144,6 +146,7 @@ def evaluate_model(
     confidence: float = 0.001,
     nms_iou: float = 0.65,
     max_detections: int = 300,
+    multi_label: bool = True,
     amp: bool = True,
 ) -> dict[str, Any]:
     model.eval()
@@ -165,6 +168,7 @@ def evaluate_model(
             confidence=confidence,
             nms_iou=nms_iou,
             max_detections=max_detections,
+            multi_label=multi_label,
         )
         for index, image_id in enumerate(batch["image_id"]):
             all_image_ids.append(image_id)
@@ -195,4 +199,3 @@ def evaluate_model(
                 }
             )
     return coco_metrics(ground_truth, coco_predictions)
-

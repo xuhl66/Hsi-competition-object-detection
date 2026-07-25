@@ -23,6 +23,7 @@ hod26-prepare = "hod26.prepare:main"
 hod26-train = "hod26.train:main"
 hod26-validate = "hod26.validate:main"
 hod26-infer = "hod26.infer:main"
+hod26-tune = "hod26.tune:main"
 hod26-submit-check = "hod26.submission:main"
 
 [tool.setuptools]
@@ -34,4 +35,3 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-
