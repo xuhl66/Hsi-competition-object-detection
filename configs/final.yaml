@@ -1,0 +1,76 @@
+project:
+  seed: 3407
+  storage: storage
+  run_name: hyperdet_huff_p2_l
+
+data:
+  root: data/raw
+  train_images: data_train/data_train/VIS
+  train_annotations: data_train/data_train/Annotations/VIS
+  test_images: data_test/data_test/VIS
+  classes: class.txt
+  manifest: storage/cache/train_manifest.json
+  test_manifest: storage/cache/test_manifest.json
+  stats: storage/cache/band_stats.json
+  folds: storage/cache/folds.json
+  num_folds: 5
+  fold: 0
+  image_height: 384
+  image_width: 768
+  quantile_low: 0.001
+  quantile_high: 0.999
+  histogram_bins: 4096
+  workers: 12
+  cache_images: 0
+
+model:
+  num_classes: 18
+  scale: l
+  input_bands: 16
+  pretrained_rgb: storage/pretrained/yolo11l.pt
+  declare_pretraining: "Ultralytics YOLO11l, pretrained on MS COCO; explicitly declared external pretraining."
+  object_aux_weight: 0.60
+  ssrm_diversity_weight: 0.02
+  ssrm_temperature: 0.70
+  object_refine_gain: 0.75
+
+train:
+  epochs: 240
+  batch_size_per_gpu: 18
+  global_batch_size: 36
+  optimizer: adamw
+  lr: 0.0008
+  rgb_lr_multiplier: 0.20
+  weight_decay: 0.05
+  warmup_epochs: 5
+  min_lr_ratio: 0.02
+  amp: true
+  compile: false
+  clip_grad_norm: 10.0
+  ema_decay: 0.9999
+  ema_tau: 2000
+  eval_every: 5
+  save_every: 10
+  patience: 45
+  multi_scale:
+    enabled: true
+    widths: [640, 704, 768, 832]
+
+augmentation:
+  horizontal_flip: 0.50
+  vertical_flip: 0.05
+  translate: 0.08
+  scale: 0.18
+  spectral_gain: 0.12
+  spectral_slope: 0.06
+  noise_std: 0.008
+  band_dropout: 0.08
+
+inference:
+  batch_size_per_gpu: 16
+  confidence: 0.001
+  nms_iou: 0.65
+  max_detections: 300
+  tta: false
+  output: storage/submissions/submission.csv
+  include_id: true

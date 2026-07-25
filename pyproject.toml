@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hod26"
+version = "0.1.0"
+description = "Single-model hyperspectral detector for the Hyperspectral Object Detection Challenge 2026"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=2.0",
+  "opencv-python>=4.10",
+  "Pillow>=10",
+  "PyYAML>=6",
+  "torch>=2.3",
+  "torchvision>=0.18",
+  "ultralytics==8.3.51",
+  "pycocotools>=2.0.8",
+]
+
+[project.scripts]
+hod26-prepare = "hod26.prepare:main"
+hod26-train = "hod26.train:main"
+hod26-validate = "hod26.validate:main"
+hod26-infer = "hod26.infer:main"
+hod26-submit-check = "hod26.submission:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+

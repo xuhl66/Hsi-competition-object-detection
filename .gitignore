@@ -1,0 +1,23 @@
+# Credentials and local Kaggle tooling
+/.kaggle/
+/.kaggle-cli/
+
+# Environments and Python build products
+/.venv
+/.pytest_cache/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+
+# Official data and downloaded archives are not source artifacts
+/data/raw/
+/data/*.zip
+
+# Dedicated-disk symlink contains checkpoints, logs and submissions
+/storage
+
+# Editor and OS noise
+.DS_Store
+*.swp
