@@ -1,0 +1,152 @@
+__include__:
+  - ../../storage/upstream/DEIM/configs/deim_dfine/deim_hgnetv2_x_coco.yml
+
+task: hsi_detection
+num_classes: 18
+remap_mscoco_category: false
+eval_spatial_size: [512, 1024]
+
+# The official 59.5-AP Objects365 -> COCO checkpoint is supplied with --tuning.
+DEIM:
+  backbone: HSIHGNetv2
+
+HSIHGNetv2:
+  name: B5
+  input_bands: 16
+  spectral_channels: [64, 96, 128, 192]
+  return_idx: [1, 2, 3]
+  freeze_stem_only: false
+  freeze_at: -1
+  freeze_norm: false
+  pretrained: false
+  local_model_dir: storage/pretrained/v2/hgnetv2/
+
+HybridEncoder:
+  in_channels: [512, 1024, 2048]
+  feat_strides: [8, 16, 32]
+  hidden_dim: 384
+  dim_feedforward: 2048
+
+DFINETransformer:
+  feat_channels: [384, 384, 384]
+  feat_strides: [8, 16, 32]
+  hidden_dim: 256
+  num_levels: 3
+  num_layers: 6
+  eval_idx: -1
+  num_queries: 300
+  num_denoising: 100
+  reg_max: 32
+  reg_scale: 8
+
+PostProcessor:
+  num_top_queries: 300
+
+train_dataloader:
+  type: DataLoader
+  dataset:
+    type: HSICocoDetection
+    img_folder: data/raw/data_train/data_train/VIS
+    ann_file: storage/v2/dataset/fold0/train.json
+    stats_file: storage/cache/band_stats.json
+    return_masks: false
+    transforms:
+      type: Compose
+      ops:
+        - type: HSIMosaic
+          output_size: [256, 512]
+          rotation_range: 7
+          translation_range: [0.08, 0.08]
+          scaling_range: [0.65, 1.35]
+          probability: 0.65
+          fill_value: 0.0
+        - type: HSISpectralAugment
+          p: 0.8
+          gain: 0.12
+          slope: 0.06
+          noise_std: 0.008
+          band_dropout: 0.06
+        - type: RandomIoUCrop
+          min_scale: 0.60
+          max_scale: 1.0
+          min_aspect_ratio: 1.2
+          max_aspect_ratio: 2.4
+          p: 0.55
+        - {type: SanitizeBoundingBoxes, min_size: 2}
+        - {type: RandomHorizontalFlip, p: 0.5}
+        - {type: HSIRandomVerticalFlip, p: 0.08}
+        - {type: Resize, size: [512, 1024], antialias: true}
+        - {type: SanitizeBoundingBoxes, min_size: 2}
+        - {type: ConvertBoxes, fmt: cxcywh, normalize: true}
+      policy:
+        name: stop_epoch
+        epoch: [2, 18, 30]
+        ops: [HSIMosaic, HSISpectralAugment, RandomIoUCrop]
+      mosaic_prob: -0.1
+  shuffle: true
+  total_batch_size: 22
+  num_workers: 4
+  drop_last: true
+  collate_fn:
+    type: HSIBatchCollateFunction
+    stop_epoch: 30
+    ema_restart_decay: 0.9999
+    widths: [896, 960, 1024]
+    mixup_prob: 0.25
+    mixup_epochs: [4, 24]
+
+val_dataloader:
+  type: DataLoader
+  dataset:
+    type: HSICocoDetection
+    img_folder: data/raw/data_train/data_train/VIS
+    ann_file: storage/v2/dataset/fold0/val.json
+    stats_file: storage/cache/band_stats.json
+    return_masks: false
+    transforms:
+      type: Compose
+      ops:
+        - {type: Resize, size: [512, 1024], antialias: true}
+  shuffle: false
+  total_batch_size: 22
+  num_workers: 4
+  drop_last: false
+  collate_fn:
+    type: HSIBatchCollateFunction
+    stop_epoch: 0
+    widths: []
+    mixup_prob: 0.0
+    mixup_epochs: [0, 0]
+
+optimizer:
+  type: AdamW
+  params:
+    - params: '^(?=.*backbone)(?=.*(?:proxy_|spectral_)).*$'
+      lr: 0.00020
+    - params: '^(?=.*backbone)(?!.*(?:proxy_|spectral_|norm|bn)).*$'
+      lr: 0.000005
+    - params: '^(?=.*backbone)(?!.*(?:proxy_|spectral_))(?=.*(?:norm|bn)).*$'
+      lr: 0.000005
+      weight_decay: 0.0
+    - params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.0
+  lr: 0.00020
+  betas: [0.9, 0.999]
+  weight_decay: 0.000125
+
+epoches: 36
+gradient_accumulation_steps: 1
+lrsheduler: flatcosine
+lr_gamma: 0.5
+warmup_iter: 150
+flat_epoch: 18
+no_aug_epoch: 6
+clip_max_norm: 0.1
+use_amp: true
+use_ema: true
+sync_bn: true
+find_unused_parameters: false
+eval_every: 2
+checkpoint_freq: 4
+print_freq: 25
+output_dir: storage/v2/runs/deim_dfine_x_hsi_fold0_pilot

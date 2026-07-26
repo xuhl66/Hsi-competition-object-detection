@@ -1,0 +1,23 @@
+__include__:
+  - ./deim_dfine_x_hsi_pilot.yaml
+
+epoches: 96
+flat_epoch: 48
+no_aug_epoch: 12
+eval_every: 2
+output_dir: storage/v2/runs/deim_dfine_x_hsi_fold0_final
+
+train_dataloader:
+  dataset:
+    transforms:
+      policy:
+        name: stop_epoch
+        epoch: [4, 48, 84]
+        ops: [HSIMosaic, HSISpectralAugment, RandomIoUCrop]
+  collate_fn:
+    stop_epoch: 84
+    ema_restart_decay: 0.9999
+    widths: [896, 960, 1024]
+    mixup_prob: 0.25
+    mixup_epochs: [4, 60]
+

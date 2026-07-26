@@ -25,6 +25,10 @@ hod26-validate = "hod26.validate:main"
 hod26-infer = "hod26.infer:main"
 hod26-tune = "hod26.tune:main"
 hod26-submit-check = "hod26.submission:main"
+hod26-v2-prepare = "hod26.v2.prepare:main"
+hod26-v2-train = "hod26.v2.train:main"
+hod26-v2-smoke = "hod26.v2.smoke:main"
+hod26-v2-infer = "hod26.v2.infer:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

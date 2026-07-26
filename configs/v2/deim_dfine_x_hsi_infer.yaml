@@ -1,0 +1,30 @@
+__include__:
+  - ./deim_dfine_x_hsi_pilot.yaml
+
+val_dataloader:
+  dataset:
+    type: HSICocoDetection
+    img_folder: data/raw/data_test/data_test/VIS
+    ann_file: storage/v2/dataset/test.json
+    stats_file: storage/cache/band_stats.json
+    return_masks: false
+    transforms:
+      type: Compose
+      ops:
+        - {type: Resize, size: [512, 1024], antialias: true}
+  shuffle: false
+  total_batch_size: 22
+  num_workers: 4
+  drop_last: false
+  collate_fn:
+    type: HSIBatchCollateFunction
+    stop_epoch: 0
+    widths: []
+    mixup_prob: 0.0
+    mixup_epochs: [0, 0]
+
+inference:
+  confidence: 0.0001
+  output: storage/v2/submissions/deim_dfine_x_hsi.csv
+  include_id: true
+
