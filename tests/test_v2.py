@@ -42,6 +42,91 @@ def test_v2_semantic_head_transfer_preserves_unmapped_classes() -> None:
 
 
 @pytest.mark.skipif(
+    not UPSTREAM.is_dir(),
+    reason="official pinned DEIM checkout is bootstrapped on the training host",
+)
+def test_v2_update_scheduler_is_resume_safe() -> None:
+    sys.path.insert(0, str(UPSTREAM.resolve()))
+    from hod26.v2.extensions import PiecewiseCosineLRScheduler
+
+    parameter = torch.nn.Parameter(torch.ones(()))
+    optimizer = torch.optim.SGD([parameter], lr=2e-4)
+    scheduler = PiecewiseCosineLRScheduler(
+        optimizer,
+        [(100, 0.5), (200, 0.5), (400, 0.1), (500, 0.01)],
+    )
+
+    assert scheduler.ratio_at(0) == pytest.approx(0.5)
+    assert scheduler.ratio_at(200) == pytest.approx(0.5)
+    assert scheduler.ratio_at(300) == pytest.approx(0.3)
+    assert scheduler.ratio_at(450) == pytest.approx(0.055)
+    assert scheduler.ratio_at(600) == pytest.approx(0.01)
+    scheduler.step(200, optimizer)
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-4)
+
+
+@pytest.mark.skipif(
+    not UPSTREAM.is_dir(),
+    reason="official pinned DEIM checkout is bootstrapped on the training host",
+)
+def test_v2_convergence_requires_every_metric_and_low_lr_tail() -> None:
+    sys.path.insert(0, str(UPSTREAM.resolve()))
+    from hod26.v2.extensions import MultiMetricConvergenceTracker
+
+    metrics = {
+        "map_50_95": 0.70,
+        "map_75": 0.82,
+        "map_small": 0.67,
+        "weak4_map_50_95": 0.42,
+    }
+    tracker = MultiMetricConvergenceTracker(
+        thresholds={name: 0.01 for name in metrics},
+        patience_evals=2,
+        min_optimizer_updates=100,
+        max_lr_ratio=0.02,
+        initial_metrics=metrics,
+    )
+
+    converged, meaningful = tracker.update(
+        metrics,
+        optimizer_updates=100,
+        lr_ratio=0.02,
+    )
+    assert not converged
+    assert not any(meaningful.values())
+
+    tracker = MultiMetricConvergenceTracker(
+        thresholds={name: 0.01 for name in metrics},
+        patience_evals=2,
+        min_optimizer_updates=100,
+        max_lr_ratio=0.02,
+        state=tracker.state_dict(),
+    )
+    improved = dict(metrics)
+    improved["map_small"] += 0.02
+    converged, meaningful = tracker.update(
+        improved,
+        optimizer_updates=101,
+        lr_ratio=0.02,
+    )
+    assert not converged
+    assert meaningful["map_small"]
+
+    converged, _ = tracker.update(
+        improved,
+        optimizer_updates=102,
+        lr_ratio=0.02,
+    )
+    assert not converged
+    converged, _ = tracker.update(
+        improved,
+        optimizer_updates=103,
+        lr_ratio=0.02,
+    )
+    assert converged
+
+
+@pytest.mark.skipif(
     not V2_DATA.is_file(),
     reason="V2 COCO views are generated from the official local dataset",
 )

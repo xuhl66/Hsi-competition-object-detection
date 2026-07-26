@@ -1,0 +1,55 @@
+__include__:
+  - ./deim_dfine_x_hsi_pilot.yaml
+
+# This is a convergence run, not another fixed-epoch pilot. Epoch 1000 is only
+# an emergency loop guard; optimizer updates and multi-metric convergence own
+# the real stopping decision.
+epoches: 1000
+required_resume_min_updates: 3924
+max_optimizer_updates: 100000
+output_dir: storage/v2/long_runs/deim_dfine_x_hsi_fold0_long
+
+# Absolute-update scheduling keeps the past unchanged when the safety ceiling
+# is extended. The pilot ended at update 3924 and LR ratio 0.50.
+update_lr_schedule:
+  points:
+    - [3924, 0.50]
+    - [16000, 0.50]
+    - [32000, 0.10]
+    - [42000, 0.03]
+    - [50000, 0.01]
+
+# A plateau is accepted only after all four diagnostics have failed to improve
+# meaningfully for 20 evaluations at the terminal LR.
+convergence:
+  min_optimizer_updates: 55000
+  patience_evals: 20
+  max_lr_ratio: 0.011
+  thresholds:
+    map_50_95: 0.0010
+    map_75: 0.0015
+    map_small: 0.0020
+    weak4_map_50_95: 0.0030
+
+# The legacy pilot checkpoint predates persisted V2 training metadata. These
+# exact Fold0 values seed global-best and plateau tracking on first resume.
+resume_metrics:
+  map_50_95: 0.6960738027058085
+  map_75: 0.8237786777583045
+  map_small: 0.6668716757838749
+  weak4_map_50_95: 0.4196252536017593
+
+eval_every: 4
+checkpoint_freq: 50
+print_freq: 25
+
+train_dataloader:
+  dataset:
+    transforms:
+      policy:
+        # Reactivate the strong exploration regime after the short clean tail
+        # in the pilot; enter the definitive clean fine-tune at epoch 300.
+        epoch: 300
+  collate_fn:
+    stop_epoch: 300
+    mixup_epochs: [36, 180]

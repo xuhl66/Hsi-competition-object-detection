@@ -8,7 +8,7 @@ import time
 from contextlib import nullcontext
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import cv2
 import numpy as np
@@ -101,6 +101,176 @@ HOD26_TO_COCO: dict[str, tuple[str, ...] | None] = {
     "stone_block": None,
     "table_tennis": ("sports ball",),
 }
+
+CONVERGENCE_METRICS = (
+    "map_50_95",
+    "map_75",
+    "map_small",
+    "weak4_map_50_95",
+)
+WEAK4_CLASSES = ("people", "stone_block", "car", "e-bike")
+
+
+class PiecewiseCosineLRScheduler:
+    """Resume-safe LR schedule addressed by absolute optimizer updates."""
+
+    def __init__(
+        self,
+        optimizer: torch.optim.Optimizer,
+        points: Sequence[Sequence[float]],
+    ) -> None:
+        normalized = tuple(
+            (int(point[0]), float(point[1])) for point in points
+        )
+        if len(normalized) < 2:
+            raise ValueError("update_lr_schedule.points needs at least 2 points")
+        if any(update < 0 or ratio <= 0 for update, ratio in normalized):
+            raise ValueError("LR update points and ratios must be positive")
+        if any(
+            right[0] <= left[0]
+            for left, right in zip(normalized, normalized[1:])
+        ):
+            raise ValueError("LR update points must be strictly increasing")
+        self.points = normalized
+        self.base_lrs = []
+        for group in optimizer.param_groups:
+            base_lr = float(group.get("initial_lr", group["lr"]))
+            group.setdefault("initial_lr", base_lr)
+            self.base_lrs.append(base_lr)
+
+    def ratio_at(self, optimizer_update: int) -> float:
+        update = int(optimizer_update)
+        if update <= self.points[0][0]:
+            return self.points[0][1]
+        for left, right in zip(
+            self.points,
+            self.points[1:],
+        ):
+            if update <= right[0]:
+                progress = (update - left[0]) / (right[0] - left[0])
+                cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+                return right[1] + (left[1] - right[1]) * cosine
+        return self.points[-1][1]
+
+    def step(
+        self,
+        optimizer_update: int,
+        optimizer: torch.optim.Optimizer,
+    ) -> torch.optim.Optimizer:
+        ratio = self.ratio_at(optimizer_update)
+        for group, base_lr in zip(
+            optimizer.param_groups,
+            self.base_lrs,
+            strict=True,
+        ):
+            group["lr"] = base_lr * ratio
+        return optimizer
+
+
+class MultiMetricConvergenceTracker:
+    """Require a low-LR plateau across every score that exposes failure modes."""
+
+    def __init__(
+        self,
+        *,
+        thresholds: Mapping[str, float],
+        patience_evals: int,
+        min_optimizer_updates: int,
+        max_lr_ratio: float,
+        initial_metrics: Mapping[str, float] | None = None,
+        state: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.thresholds = {
+            name: float(thresholds[name]) for name in CONVERGENCE_METRICS
+        }
+        if any(value <= 0 for value in self.thresholds.values()):
+            raise ValueError("Every convergence threshold must be positive")
+        self.patience_evals = int(patience_evals)
+        self.min_optimizer_updates = int(min_optimizer_updates)
+        self.max_lr_ratio = float(max_lr_ratio)
+        if self.patience_evals < 1:
+            raise ValueError("convergence patience_evals must be >= 1")
+        if self.min_optimizer_updates < 0:
+            raise ValueError("min_optimizer_updates must be >= 0")
+        if self.max_lr_ratio <= 0:
+            raise ValueError("max_lr_ratio must be positive")
+
+        seeded = initial_metrics or {}
+        self.best = {
+            name: float(seeded[name])
+            for name in CONVERGENCE_METRICS
+            if name in seeded
+        }
+        self.stale_evals = {name: 0 for name in CONVERGENCE_METRICS}
+        self.low_lr_evals = 0
+        self.evaluations = 0
+        self.last_eval_update = -1
+        if state:
+            self.load_state_dict(state)
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "best": dict(self.best),
+            "stale_evals": dict(self.stale_evals),
+            "low_lr_evals": self.low_lr_evals,
+            "evaluations": self.evaluations,
+            "last_eval_update": self.last_eval_update,
+        }
+
+    def load_state_dict(self, state: Mapping[str, Any]) -> None:
+        saved_best = state.get("best", {})
+        saved_stale = state.get("stale_evals", {})
+        for name in CONVERGENCE_METRICS:
+            if name in saved_best:
+                self.best[name] = float(saved_best[name])
+            if name in saved_stale:
+                self.stale_evals[name] = int(saved_stale[name])
+        self.low_lr_evals = int(state.get("low_lr_evals", 0))
+        self.evaluations = int(state.get("evaluations", 0))
+        self.last_eval_update = int(state.get("last_eval_update", -1))
+
+    def update(
+        self,
+        metrics: Mapping[str, float],
+        *,
+        optimizer_updates: int,
+        lr_ratio: float,
+    ) -> tuple[bool, dict[str, bool]]:
+        missing = set(CONVERGENCE_METRICS) - set(metrics)
+        if missing:
+            raise ValueError(
+                f"Missing convergence metrics: {sorted(missing)}"
+            )
+        meaningful: dict[str, bool] = {}
+        for name in CONVERGENCE_METRICS:
+            value = float(metrics[name])
+            previous = self.best.get(name)
+            improved = (
+                previous is None
+                or value >= previous + self.thresholds[name]
+            )
+            meaningful[name] = improved
+            if improved:
+                self.best[name] = value
+                self.stale_evals[name] = 0
+            else:
+                self.stale_evals[name] += 1
+
+        if lr_ratio <= self.max_lr_ratio:
+            self.low_lr_evals += 1
+        else:
+            self.low_lr_evals = 0
+        self.evaluations += 1
+        self.last_eval_update = int(optimizer_updates)
+        converged = (
+            optimizer_updates >= self.min_optimizer_updates
+            and self.low_lr_evals >= self.patience_evals
+            and all(
+                self.stale_evals[name] >= self.patience_evals
+                for name in CONVERGENCE_METRICS
+            )
+        )
+        return converged, meaningful
 
 
 def _load_cube_tensor(
@@ -612,8 +782,94 @@ def _semantic_head_tensor(
     return result
 
 
+def _per_class_ap_50_95(coco_evaluator: Any) -> dict[str, float]:
+    precision = np.asarray(
+        coco_evaluator.coco_eval["bbox"].eval["precision"]
+    )
+    if precision.ndim != 5 or precision.shape[2] != len(HOD26_CLASSES):
+        raise ValueError(
+            "Unexpected COCO precision shape for HOD26: "
+            f"{precision.shape}"
+        )
+    result = {}
+    for index, name in enumerate(HOD26_CLASSES):
+        values = precision[:, :, index, 0, -1]
+        valid = values[values > -1]
+        result[name] = float(valid.mean()) if valid.size else float("nan")
+    return result
+
+
+def _convergence_metrics(
+    test_stats: Mapping[str, Any],
+    per_class_ap: Mapping[str, float],
+) -> dict[str, float]:
+    summary = test_stats["coco_eval_bbox"]
+    weak_values = [float(per_class_ap[name]) for name in WEAK4_CLASSES]
+    if not all(math.isfinite(value) for value in weak_values):
+        raise ValueError("Weak-class AP contains a non-finite value")
+    return {
+        "map_50_95": float(summary[0]),
+        "map_75": float(summary[2]),
+        "map_small": float(summary[3]),
+        "weak4_map_50_95": float(np.mean(weak_values)),
+    }
+
+
 class HSIDetSolver(DetSolver):
     """DEIM solver with safe and explicit 80->18 semantic head transfer."""
+
+    def __init__(self, cfg: Any) -> None:
+        super().__init__(cfg)
+        self.optimizer_updates = 0
+        self.best_ap_50_95 = -1.0
+        self.convergence_state: dict[str, Any] = {}
+        self._loaded_v2_training_state = False
+        self._resume_lr_ratio: float | None = None
+        self._active_lr_schedule_points: list[list[float]] = []
+        self._current_lr_ratio = 1.0
+
+    def state_dict(self) -> dict[str, Any]:
+        state = super().state_dict()
+        state["v2_training_state"] = {
+            "optimizer_updates": int(self.optimizer_updates),
+            "best_ap_50_95": float(self.best_ap_50_95),
+            "convergence_state": copy.deepcopy(self.convergence_state),
+            "lr_schedule_points": copy.deepcopy(
+                self._active_lr_schedule_points
+            ),
+            "lr_ratio": float(self._current_lr_ratio),
+        }
+        return state
+
+    def load_state_dict(self, state: Mapping[str, Any]) -> None:
+        super().load_state_dict(state)
+        training_state = state.get("v2_training_state")
+        if not training_state:
+            return
+        self.optimizer_updates = int(training_state["optimizer_updates"])
+        self.best_ap_50_95 = float(
+            training_state.get("best_ap_50_95", -1.0)
+        )
+        self.convergence_state = copy.deepcopy(
+            training_state.get("convergence_state", {})
+        )
+        self._resume_lr_ratio = float(
+            training_state.get("lr_ratio", 1.0)
+        )
+        self._loaded_v2_training_state = True
+        print(
+            "Load v2_training_state "
+            f"(optimizer_updates={self.optimizer_updates}, "
+            f"best_ap_50_95={self.best_ap_50_95:.6f})"
+        )
+
+    def _save_checkpoint(self, path: Path) -> None:
+        """Atomically replace checkpoints so an interruption keeps the old one."""
+        if not dist_utils.is_main_process():
+            return
+        temporary = path.with_name(f".{path.name}.tmp")
+        torch.save(self.state_dict(), temporary)
+        temporary.replace(path)
 
     def load_tuning_state(self, path: str):
         state = (
@@ -666,8 +922,11 @@ class HSIDetSolver(DetSolver):
     def _train_one_epoch_accumulated(
         self,
         epoch: int,
-        scheduler: FlatCosineLRScheduler | None,
+        scheduler: (
+            PiecewiseCosineLRScheduler | FlatCosineLRScheduler | None
+        ),
         accumulation_steps: int,
+        max_optimizer_updates: int,
     ) -> dict[str, float]:
         self.model.train()
         self.criterion.train()
@@ -691,6 +950,11 @@ class HSIDetSolver(DetSolver):
                 header,
             )
         ):
+            if (
+                max_optimizer_updates > 0
+                and self.optimizer_updates >= max_optimizer_updates
+            ):
+                break
             samples = samples.to(self.device, non_blocking=True)
             targets = [
                 {
@@ -752,20 +1016,41 @@ class HSIDetSolver(DetSolver):
                         self.model.parameters(),
                         self.cfg.clip_max_norm,
                     )
+                optimizer_stepped = True
                 if self.scaler is not None:
+                    old_scale = float(self.scaler.get_scale())
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
+                    optimizer_stepped = (
+                        float(self.scaler.get_scale()) >= old_scale
+                    )
                 else:
                     self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
-                if self.ema is not None:
-                    self.ema.update(self.model)
-                if scheduler is not None:
-                    global_update = epoch * updates_per_epoch + update_index
-                    self.optimizer = scheduler.step(
-                        global_update,
-                        self.optimizer,
-                    )
+                if optimizer_stepped:
+                    self.optimizer_updates += 1
+                    if self.ema is not None:
+                        self.ema.update(self.model)
+                    if scheduler is not None:
+                        scheduler_update = (
+                            self.optimizer_updates
+                            if isinstance(
+                                scheduler,
+                                PiecewiseCosineLRScheduler,
+                            )
+                            else epoch * updates_per_epoch + update_index
+                        )
+                        self.optimizer = scheduler.step(
+                            scheduler_update,
+                            self.optimizer,
+                        )
+                        if isinstance(
+                            scheduler,
+                            PiecewiseCosineLRScheduler,
+                        ):
+                            self._current_lr_ratio = scheduler.ratio_at(
+                                self.optimizer_updates
+                            )
                 update_index += 1
 
             reduced = dist_utils.reduce_dict(loss_dict)
@@ -786,8 +1071,114 @@ class HSIDetSolver(DetSolver):
             name: meter.global_avg for name, meter in logger.meters.items()
         }
 
+    def _restore_legacy_training_progress(
+        self,
+        updates_per_epoch: int,
+    ) -> None:
+        if self._loaded_v2_training_state:
+            return
+        ema_updates = int(getattr(self.ema, "updates", 0) or 0)
+        epoch_updates = max(0, self.last_epoch + 1) * updates_per_epoch
+        self.optimizer_updates = ema_updates or epoch_updates
+        resume_metrics = self.cfg.yaml_cfg.get("resume_metrics", {})
+        if resume_metrics:
+            self.best_ap_50_95 = float(resume_metrics["map_50_95"])
+        first_group = self.optimizer.param_groups[0]
+        base_lr = float(
+            first_group.get("initial_lr", first_group["lr"])
+        )
+        self._current_lr_ratio = float(first_group["lr"]) / base_lr
+        print(
+            "Legacy checkpoint progress inferred as "
+            f"{self.optimizer_updates} optimizer updates "
+            f"(EMA={ema_updates}, epoch estimate={epoch_updates})."
+        )
+
+    def _build_update_scheduler(
+        self,
+        updates_per_epoch: int,
+    ) -> PiecewiseCosineLRScheduler | FlatCosineLRScheduler | None:
+        schedule_cfg = self.cfg.yaml_cfg.get("update_lr_schedule")
+        if not schedule_cfg:
+            if self.cfg.lrsheduler is None:
+                return None
+            return FlatCosineLRScheduler(
+                self.optimizer,
+                self.cfg.lr_gamma,
+                updates_per_epoch,
+                total_epochs=self.cfg.epoches,
+                warmup_iter=self.cfg.warmup_iter,
+                flat_epochs=self.cfg.flat_epoch,
+                no_aug_epochs=self.cfg.no_aug_epoch,
+            )
+
+        scheduler = PiecewiseCosineLRScheduler(
+            self.optimizer,
+            schedule_cfg["points"],
+        )
+        expected_ratio = scheduler.ratio_at(self.optimizer_updates)
+        actual_ratios = [
+            float(group["lr"])
+            / float(group.get("initial_lr", group["lr"]))
+            for group in self.optimizer.param_groups
+        ]
+        if any(
+            not math.isclose(
+                ratio,
+                expected_ratio,
+                rel_tol=1e-5,
+                abs_tol=1e-8,
+            )
+            for ratio in actual_ratios
+        ):
+            raise ValueError(
+                "Resume LR would jump at optimizer update "
+                f"{self.optimizer_updates}: checkpoint ratios="
+                f"{actual_ratios}, configured ratio={expected_ratio}"
+            )
+        if (
+            self._resume_lr_ratio is not None
+            and not math.isclose(
+                self._resume_lr_ratio,
+                expected_ratio,
+                rel_tol=1e-5,
+                abs_tol=1e-8,
+            )
+        ):
+            raise ValueError(
+                "The configured LR schedule is incompatible with the "
+                f"saved V2 ratio {self._resume_lr_ratio} at update "
+                f"{self.optimizer_updates}"
+            )
+        scheduler.step(self.optimizer_updates, self.optimizer)
+        self._active_lr_schedule_points = [
+            [int(update), float(ratio)]
+            for update, ratio in scheduler.points
+        ]
+        self._current_lr_ratio = expected_ratio
+        return scheduler
+
+    def _build_convergence_tracker(
+        self,
+    ) -> MultiMetricConvergenceTracker | None:
+        config = self.cfg.yaml_cfg.get("convergence")
+        if not config:
+            return None
+        tracker = MultiMetricConvergenceTracker(
+            thresholds=config["thresholds"],
+            patience_evals=int(config["patience_evals"]),
+            min_optimizer_updates=int(
+                config["min_optimizer_updates"]
+            ),
+            max_lr_ratio=float(config["max_lr_ratio"]),
+            initial_metrics=self.cfg.yaml_cfg.get("resume_metrics"),
+            state=self.convergence_state,
+        )
+        self.convergence_state = tracker.state_dict()
+        return tracker
+
     def fit(self):
-        """Competition-oriented fit loop with true global-batch accumulation."""
+        """Long-horizon fit loop that only stops on credible convergence."""
         self.train()
         accumulation = int(
             self.cfg.yaml_cfg.get("gradient_accumulation_steps", 1)
@@ -801,17 +1192,21 @@ class HSIDetSolver(DetSolver):
             else len(self.train_dataloader)
         )
         updates_per_epoch = math.ceil(epoch_batches / accumulation)
-        scheduler = None
-        if self.cfg.lrsheduler is not None:
-            scheduler = FlatCosineLRScheduler(
-                self.optimizer,
-                self.cfg.lr_gamma,
-                updates_per_epoch,
-                total_epochs=self.cfg.epoches,
-                warmup_iter=self.cfg.warmup_iter,
-                flat_epochs=self.cfg.flat_epoch,
-                no_aug_epochs=self.cfg.no_aug_epoch,
+        self._restore_legacy_training_progress(updates_per_epoch)
+        required_updates = int(
+            self.cfg.yaml_cfg.get("required_resume_min_updates", 0)
+        )
+        if self.optimizer_updates < required_updates:
+            raise ValueError(
+                "This long-horizon config must resume a sufficiently trained "
+                f"checkpoint: got {self.optimizer_updates} updates, need "
+                f"at least {required_updates}."
             )
+        scheduler = self._build_update_scheduler(updates_per_epoch)
+        tracker = self._build_convergence_tracker()
+        max_optimizer_updates = int(
+            self.cfg.yaml_cfg.get("max_optimizer_updates", 0)
+        )
 
         trainable = sum(
             parameter.numel()
@@ -830,17 +1225,41 @@ class HSIDetSolver(DetSolver):
                         "gradient_accumulation_steps": accumulation,
                         "effective_global_batch": effective_batch,
                         "updates_per_epoch": updates_per_epoch,
+                        "start_epoch": self.last_epoch + 1,
+                        "start_optimizer_updates": self.optimizer_updates,
+                        "max_optimizer_updates_safety_ceiling": (
+                            max_optimizer_updates
+                        ),
+                        "lr_ratio": self._current_lr_ratio,
+                        "lr_schedule_points": (
+                            self._active_lr_schedule_points
+                        ),
                     }
                 },
                 indent=2,
             )
         )
+        if (
+            self.output_dir
+            and not self._loaded_v2_training_state
+            and self.best_ap_50_95 >= 0
+            and not (self.output_dir / "best.pth").exists()
+        ):
+            self._save_checkpoint(self.output_dir / "best.pth")
 
-        best_ap = -1.0
         start_epoch = self.last_epoch + 1
         start_time = time.time()
         eval_every = int(self.cfg.yaml_cfg.get("eval_every", 1))
+        if eval_every < 1:
+            raise ValueError("eval_every must be >= 1")
+        stop_reason: str | None = None
         for epoch in range(start_epoch, self.cfg.epoches):
+            if (
+                max_optimizer_updates > 0
+                and self.optimizer_updates >= max_optimizer_updates
+            ):
+                stop_reason = "safety_update_ceiling"
+                break
             self.train_dataloader.set_epoch(epoch)
             if dist_utils.is_dist_available_and_initialized():
                 self.train_dataloader.sampler.set_epoch(epoch)
@@ -848,6 +1267,7 @@ class HSIDetSolver(DetSolver):
                 epoch,
                 scheduler,
                 accumulation,
+                max_optimizer_updates,
             )
             if scheduler is None:
                 if (
@@ -857,12 +1277,21 @@ class HSIDetSolver(DetSolver):
                     self.lr_scheduler.step()
             self.last_epoch = epoch
 
+            reached_update_ceiling = (
+                max_optimizer_updates > 0
+                and self.optimizer_updates >= max_optimizer_updates
+            )
             should_evaluate = (
                 (epoch + 1) % eval_every == 0
                 or epoch + 1 == self.cfg.epoches
+                or reached_update_ceiling
             )
             test_stats: dict[str, Any] = {}
+            per_class_ap: dict[str, float] = {}
+            convergence_metrics: dict[str, float] = {}
+            meaningful_improvements: dict[str, bool] = {}
             coco_evaluator = None
+            converged = False
             if should_evaluate:
                 module = self.ema.module if self.ema else self.model
                 test_stats, coco_evaluator = evaluate(
@@ -873,30 +1302,71 @@ class HSIDetSolver(DetSolver):
                     self.evaluator,
                     self.device,
                 )
-                current_ap = float(test_stats["coco_eval_bbox"][0])
-                if current_ap > best_ap:
-                    best_ap = current_ap
+                per_class_ap = _per_class_ap_50_95(coco_evaluator)
+                convergence_metrics = _convergence_metrics(
+                    test_stats,
+                    per_class_ap,
+                )
+                if tracker is not None:
+                    converged, meaningful_improvements = tracker.update(
+                        convergence_metrics,
+                        optimizer_updates=self.optimizer_updates,
+                        lr_ratio=self._current_lr_ratio,
+                    )
+                    self.convergence_state = tracker.state_dict()
+                current_ap = convergence_metrics["map_50_95"]
+                improved_best = current_ap > self.best_ap_50_95
+                if improved_best:
+                    self.best_ap_50_95 = current_ap
                     if self.output_dir:
-                        dist_utils.save_on_master(
-                            self.state_dict(),
-                            self.output_dir / "best.pth",
+                        self._save_checkpoint(
+                            self.output_dir / "best.pth"
                         )
+                print(
+                    json.dumps(
+                        {
+                            "v2_evaluation": {
+                                "epoch": epoch,
+                                "optimizer_updates": (
+                                    self.optimizer_updates
+                                ),
+                                "lr_ratio": self._current_lr_ratio,
+                                **convergence_metrics,
+                                "best_ap_50_95": self.best_ap_50_95,
+                                "meaningful_improvements": (
+                                    meaningful_improvements
+                                ),
+                                "converged": converged,
+                            }
+                        },
+                        indent=2,
+                    )
+                )
+
+            if converged:
+                stop_reason = "credible_multimetric_convergence"
+            elif reached_update_ceiling:
+                stop_reason = "safety_update_ceiling"
 
             if self.output_dir:
-                dist_utils.save_on_master(
-                    self.state_dict(),
-                    self.output_dir / "last.pth",
-                )
+                self._save_checkpoint(self.output_dir / "last.pth")
                 if (epoch + 1) % int(self.cfg.checkpoint_freq) == 0:
-                    dist_utils.save_on_master(
-                        self.state_dict(),
+                    self._save_checkpoint(
                         self.output_dir / f"checkpoint{epoch + 1:04}.pth",
                     )
             log_stats = {
                 **{f"train_{key}": value for key, value in train_stats.items()},
                 **{f"test_{key}": value for key, value in test_stats.items()},
                 "epoch": epoch,
-                "best_ap_50_95": best_ap,
+                "optimizer_updates": self.optimizer_updates,
+                "lr_ratio": self._current_lr_ratio,
+                "best_ap_50_95": self.best_ap_50_95,
+                "per_class_ap_50_95": per_class_ap,
+                "convergence_metrics": convergence_metrics,
+                "convergence_state": copy.deepcopy(
+                    self.convergence_state
+                ),
+                "stop_reason": stop_reason,
                 "n_parameters": trainable,
             }
             if self.output_dir and dist_utils.is_main_process():
@@ -911,7 +1381,28 @@ class HSIDetSolver(DetSolver):
                         coco_evaluator.coco_eval["bbox"].eval,
                         eval_dir / "latest.pth",
                     )
+            if stop_reason is not None:
+                break
+        else:
+            stop_reason = "epoch_guard_exhausted"
         print(
-            "Training time",
-            str(timedelta(seconds=int(time.time() - start_time))),
+            json.dumps(
+                {
+                    "v2_training_finished": {
+                        "reason": stop_reason,
+                        "optimizer_updates": self.optimizer_updates,
+                        "best_ap_50_95": self.best_ap_50_95,
+                        "training_time": str(
+                            timedelta(
+                                seconds=int(time.time() - start_time)
+                            )
+                        ),
+                        "is_model_converged": (
+                            stop_reason
+                            == "credible_multimetric_convergence"
+                        ),
+                    }
+                },
+                indent=2,
+            )
         )
