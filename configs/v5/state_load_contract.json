@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "hod26_version": "v5",
+  "runtime_source_lock": {
+    "configs/v4/co_dino_vitl_hsi_fold0.py": "ffb7a7a0464c0331e2e4ef9f541c89625d1ec9e98ffa5e268e24b22dd573fa24",
+    "configs/v5/co_dino_vitl_fdr_salience_fold0.py": "bfa57cc273bcf80f86ad3f8bd0881102b140cd333b299b4a65e9cfd35bb334b6",
+    "src/hod26/config.py": "7dc2007a71eabbbe9f46c2d57d1e32a6839621592e4cddd8b71f449e367ea216",
+    "src/hod26/data.py": "b1094594642049bfa913ec98d50f03978b952b66e180a02ec0bd7a3a79aeda9c",
+    "src/hod26/v4/__init__.py": "79f0b81bf49628a6f932197177f7fd05f467d00f84feabe38399433649fa96a1",
+    "src/hod26/v4/compat.py": "132e7dbe7115e739df82b242c6dd630be9a5b16c679a37b0d99df02c0772c3aa",
+    "src/hod26/v4/constants.py": "62175a74120c61b4d50db7297058086d53ed115e11d3c3c82db4647f2382a9c5",
+    "src/hod26/v4/data.py": "4b143941f473a539acf2415c3ef368a10eb6208b812c7c6de0f12f348ba06b48",
+    "src/hod26/v4/hooks.py": "af15bf8a753670ce7290d6de468a881e2165fce2a84f95a6e6e6a06d3f5aa0d7",
+    "src/hod26/v4/model.py": "894ad97762fda5cfefe71ef562bbdba4fad6e2d931075fc771aa3f0fa381cf54",
+    "src/hod26/v4/optim.py": "c7a6313cb2ba86c2b3a3505bc4c680577391b1bf8907f3b7ed171143e143b4e1",
+    "src/hod26/v5/__init__.py": "5fe95380ffee76691470d53d726c8178b764c3340bf27d1b5beb75683f138de4",
+    "src/hod26/v5/checkpoint.py": "1efc0228a873ab82bbd2bcba164baef3d3a9dfae060416dc35a1b3d2996d2861",
+    "src/hod26/v5/data.py": "ead7a6b069d6a83c1094ffe6f2fbd829c2ede3939aeb66a5ce05c8a3482e4c36",
+    "src/hod26/v5/hooks.py": "004afb211d5951d8a495f89168aef08ea62c44dfcbd2d807cc40d8ad6e6af055",
+    "src/hod26/v5/load_gate.py": "3411835a307316f2bb10f30ed66ca5c79b5b013002bf6123c9a9e3f66059d297",
+    "src/hod26/v5/model.py": "e2b8aa18db49918dd7a0898b37c68118e1c871882295bce3037f8aac4cdc453d",
+    "src/hod26/v5/optim.py": "508245d80d7b29321c36447c0e1c2effea7d474497aa0fa5f0bf0c46485080d7",
+    "src/hod26/v5/stateful.py": "100ba5f35429cc9b1f1ccb72d3f75f935c6ab3483df4b77a7f6d75339640870a",
+    "tools/prepare_v5.sh": "bfcb206b16b55616a11d19bdafb9b090f3ff0a89d9e51b0b7d84ececcfea87f9",
+    "tools/smoke_v5.sh": "f0ed70f3f13961a2daeff0684edcd9722642e8030169efde8af7303bd09b867f",
+    "tools/train_v5.sh": "00c6aa6235f66a919df8808a3e70c7996e0cc3092ea8dff63b729e4c23289cd6"
+  },
+  "upstream": {
+    "path": "storage/upstream/Co-DETR",
+    "commit": "26653521e47157fdd819e764b4bb949057ea9f3b",
+    "working_diff_sha256": "60ba8524725e45e6aa5f5adf5dfcf3febf1daefbe19a3b933b48794ab81eb63f"
+  },
+  "lineage": {
+    "parent_checkpoint_sha256": "2b96f909af97c93c01c2141d032eb391428b18aac76be5e38f4f3ae5f9198932",
+    "parent_epoch": 30
+  },
+  "model": {
+    "state_tensors": 1138,
+    "ema_pairs": 1138
+  },
+  "optimizer": {
+    "parent_attempted_iterations": 42180,
+    "parent_successful_steps": 42168,
+    "parent_amp_skipped_steps": 12,
+    "parent_optimizer_states": 1015,
+    "target_trainable_tensors": 1090,
+    "bootstrap_stateful_states": 1030,
+    "fresh_states": 60,
+    "semantic_salience_clone_states": 15,
+    "fresh_prefixes": [
+      "query_head.fdr_branches.",
+      "query_head.lqe_layers."
+    ]
+  },
+  "fp16_scaler": {
+    "parent_was_serialized": true,
+    "parent_scale": 8.0,
+    "parent_growth_tracker": 1535,
+    "bootstrap_inherited": false,
+    "bootstrap_policy": "fresh_recalibration_for_changed_v5_graph",
+    "resume_required": true
+  },
+  "ema": {
+    "inherited_attempted_age": 42180,
+    "current_lineage_update_order": "pre_optimizer_step_v4_compatible",
+    "current_lineage_smooths_control_buffers": true,
+    "policy": "preserve_current_v5_lineage_on_resume; redesign_only_at_a_declared_new_version_boundary"
+  }
+}

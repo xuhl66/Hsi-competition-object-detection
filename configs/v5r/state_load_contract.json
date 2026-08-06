@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "hod26_version": "v5r",
+  "runtime_source_lock": {
+    "configs/v4/co_dino_vitl_hsi_fold0.py": "ffb7a7a0464c0331e2e4ef9f541c89625d1ec9e98ffa5e268e24b22dd573fa24",
+    "configs/v5/co_dino_vitl_fdr_salience_fold0.py": "bfa57cc273bcf80f86ad3f8bd0881102b140cd333b299b4a65e9cfd35bb334b6",
+    "configs/v5r/co_dino_vitl_fdr_prehead_fold0.py": "e4e39793dc864ab0a4643fd4580a27e5f5964d5215737a3f8867c85338bec7d9",
+    "src/hod26/config.py": "7dc2007a71eabbbe9f46c2d57d1e32a6839621592e4cddd8b71f449e367ea216",
+    "src/hod26/data.py": "b1094594642049bfa913ec98d50f03978b952b66e180a02ec0bd7a3a79aeda9c",
+    "src/hod26/v4/__init__.py": "79f0b81bf49628a6f932197177f7fd05f467d00f84feabe38399433649fa96a1",
+    "src/hod26/v4/compat.py": "132e7dbe7115e739df82b242c6dd630be9a5b16c679a37b0d99df02c0772c3aa",
+    "src/hod26/v4/constants.py": "62175a74120c61b4d50db7297058086d53ed115e11d3c3c82db4647f2382a9c5",
+    "src/hod26/v4/data.py": "4b143941f473a539acf2415c3ef368a10eb6208b812c7c6de0f12f348ba06b48",
+    "src/hod26/v4/hooks.py": "af15bf8a753670ce7290d6de468a881e2165fce2a84f95a6e6e6a06d3f5aa0d7",
+    "src/hod26/v4/model.py": "894ad97762fda5cfefe71ef562bbdba4fad6e2d931075fc771aa3f0fa381cf54",
+    "src/hod26/v4/optim.py": "c7a6313cb2ba86c2b3a3505bc4c680577391b1bf8907f3b7ed171143e143b4e1",
+    "src/hod26/v5/__init__.py": "5fe95380ffee76691470d53d726c8178b764c3340bf27d1b5beb75683f138de4",
+    "src/hod26/v5/data.py": "ead7a6b069d6a83c1094ffe6f2fbd829c2ede3939aeb66a5ce05c8a3482e4c36",
+    "src/hod26/v5/hooks.py": "004afb211d5951d8a495f89168aef08ea62c44dfcbd2d807cc40d8ad6e6af055",
+    "src/hod26/v5/model.py": "e2b8aa18db49918dd7a0898b37c68118e1c871882295bce3037f8aac4cdc453d",
+    "src/hod26/v5/load_gate.py": "3481d867324ae26592f00eae0acde374c2a68f95277f2f7e6658b9415a841ea8",
+    "src/hod26/v5r/__init__.py": "ab3a79dd38d6f1a4080bf410bb1481ca3ce14ef32130ecba368ec7cdecffd1d0",
+    "src/hod26/v5r/model.py": "5aa691159f7c0294859d25eb261ea862bdab478dc81a7de6e8359ce15cbd978e",
+    "src/hod26/v5r/hooks.py": "2d28cd46fb1ff2c50bf9748082faab9d2a0157c00aecf11d4b18b9219a288eb4",
+    "src/hod26/v5r/optim.py": "a94b08e4b2577c5e0763ec8480305568abd928f44e792e1eb549c2ef14223f2e",
+    "src/hod26/v5r/checkpoint.py": "7df2eb83c975c74ff78eb5592fc61918f94662f63847e147a7aa349a27a48d65",
+    "src/hod26/v5r/stateful.py": "87728d803926dd142a625a5d94990967af5b821c65b5b5fece5791f87b711f3c",
+    "tools/prepare_v5r.sh": "e6e8d1f979b91d4b525340416dbdfefe91910c6ab64eea5724344d68e3d0e01e",
+    "tools/smoke_v5r.sh": "32aafd495020a63cad7ba9921477794153744d25cb9a9d39c92abbd7228e1a1e",
+    "tools/train_v5r.sh": "71ebb85cd1ff1afba05b3987ace9865e5dc645beccdabcec904ab9507931efdb"
+  },
+  "upstream": {
+    "path": "storage/upstream/Co-DETR",
+    "commit": "26653521e47157fdd819e764b4bb949057ea9f3b",
+    "working_diff_sha256": "60ba8524725e45e6aa5f5adf5dfcf3febf1daefbe19a3b933b48794ab81eb63f"
+  },
+  "lineage": {
+    "config_source": "configs/v5r/co_dino_vitl_fdr_prehead_fold0.py",
+    "parent_checkpoint_sha256": "2b96f909af97c93c01c2141d032eb391428b18aac76be5e38f4f3ae5f9198932",
+    "prohibited_parent_checkpoint_sha256": "14b8b7a9987cfc18ac32d6139b41d7f31fe664686b38f7e951c6a992c3751ff5",
+    "parent_epoch": 30
+  },
+  "model": {
+    "state_tensors": 1144,
+    "ema_pairs": 1144
+  },
+  "optimizer": {
+    "parent_attempted_iterations": 42180,
+    "parent_successful_steps": 42168,
+    "parent_amp_skipped_steps": 12,
+    "parent_optimizer_states": 1015,
+    "target_trainable_tensors": 1096,
+    "bootstrap_stateful_states": 1015,
+    "fresh_states": 81,
+    "semantic_salience_clone_states": 0,
+    "fresh_prefixes": [
+      "query_head.fdr_branches.",
+      "query_head.lqe_layers.",
+      "query_head.pre_bbox_head.",
+      "neck.salience_high."
+    ]
+  },
+  "fp16_scaler": {
+    "parent_was_serialized": true,
+    "parent_scale": 8.0,
+    "parent_growth_tracker": 1535,
+    "bootstrap_inherited": false,
+    "bootstrap_policy": "fresh_recalibration_for_changed_v5r_graph",
+    "resume_required": true
+  },
+  "ema": {
+    "inherited_attempted_age": 42180,
+    "current_lineage_update_order": "post_successful_optimizer_step",
+    "current_lineage_smooths_control_buffers": false,
+    "policy": "learned EMA advances only after successful AdamW step; transition buffers are copied"
+  }
+}

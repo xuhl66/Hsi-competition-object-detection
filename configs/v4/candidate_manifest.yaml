@@ -1,0 +1,52 @@
+version: 4
+candidate: co_dino_vitl_hsi_fold0
+architecture: object-aware Co-DINO ViT-L plus native 16-band P2-P5 spectral fusion
+parameters: 369146994
+queries: 1500
+training_heads:
+  - Co-DINO query head
+  - RPN/ROI collaborative head
+  - ATSS collaborative head
+  - OSSDet-style box-supervised object activation head
+feature_refinement:
+  object_activation_loss_weight: 0.6
+  background_difference_weight: 0.1
+  object_aware_p2_gate: exact-identity start
+  cross_spectral_object_refinement: P2-to-P5 exact-identity start
+numerics:
+  mixed_precision: dynamic loss scaling
+  channel_layer_norm: FP32 compute with original-dtype output
+inference_head: Co-DINO query head
+single_model: true
+official_metric: mAP@[0.50:0.95]
+formal_config: configs/v4/co_dino_vitl_hsi_fold0.py
+soft_horizon_optimizer_updates: 101232
+optimizer_updates_per_epoch: 1406
+validation_interval_updates: 2812
+checkpoint_interval_updates: 2812
+augmentation:
+  native_16_band_mosaic:
+    probability: 0.25
+    active_stage: strong
+    distinct_scenes: 4
+  mixup:
+    probability: 0.0
+    reason: disabled because spectral mixtures do not have faithful hard-box targets
+resume_state:
+  - raw_parameters
+  - ema_parameters
+  - optimizer
+  - fp16_scaler
+  - epoch
+  - optimizer_update
+inference:
+  tta_views: 2
+  widths: [1280]
+  flips: [none, horizontal]
+  merge: classwise Gaussian Soft-NMS
+  iou_threshold: 0.55
+  sigma: 0.5
+  score_threshold: 0.0001
+  max_detections: 300
+  prediction_ensemble: false
+external_pretraining_declared: true

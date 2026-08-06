@@ -1,0 +1,56 @@
+version: 5R
+candidate: co_dino_vitl_fdr_prehead_fold0
+architecture: V4 Co-DINO ViT-L plus supervised-anchor D-FINE FDR/GO-LSD/LQE and scale-aware salience
+queries: 1500
+training_heads:
+  - Co-DINO query head with six-layer FDR and LQE
+  - independent supervised D-FINE-style pre-bbox anchor
+  - native-coordinate RPN/ROI and ATSS collaborative heads
+  - P2-P5 scale-aware salience heads
+initialization:
+  sole_training_parent: V4 epoch-30
+  prohibited_parent: faulty V5 epoch-18 and all other V5 checkpoints
+  parent_runner_attempted_iterations: 42180
+  parent_successful_adamw_steps: 42168
+  parent_amp_skipped_steps: 12
+  spectral_reparameterization: exact raw16 collapse
+  fdr_lqe: official D-FINE-X Objects365-to-COCO tensors
+  pre_bbox_head: V4 layer-0 bbox-head weight and EMA clone
+  optimizer_inherited: true
+  salience_optimizer_moments: fresh
+  pre_bbox_optimizer_moments: fresh
+  fdr_lqe_optimizer_moments: fresh
+  ema_inherited: true
+  ema_inherited_attempted_age: 42180
+  fp16_parent_scaler_serialized: true
+  fp16_parent_scale: 8.0
+  fp16_scaler_inherited: false
+  fp16_bootstrap_policy: fresh recalibration for changed V5R graph
+transition:
+  start_update: 0
+  fully_active_update: 12000
+  exact_v4_forward_at_update_zero: true
+  strong_mosaic_starts_after_transition: true
+single_model: true
+official_metric: mAP@[0.50:0.95]
+formal_config: configs/v5r/co_dino_vitl_fdr_prehead_fold0.py
+schedule_coordinate: runner attempted iterations
+soft_horizon_attempted_updates: 134976
+nominal_attempted_updates_per_epoch: 1406
+validation_interval_attempted_updates: 2812
+checkpoint_interval_attempted_updates: 2812
+ema_lineage:
+  learned_weight_update_order: post successful optimizer step
+  amp_overflow_updates_ema: false
+  transition_buffers: copied, never smoothed
+promotion_inference:
+  checkpoint: best single EMA checkpoint
+  widths: [1280]
+  flips: [none, horizontal]
+  merge: classwise Gaussian Soft-NMS
+  iou_threshold: 0.55
+  sigma: 0.5
+  score_threshold: 0.0001
+  max_detections: 300
+  soup_swa_slicing_wbf: false
+external_pretraining_declared: true

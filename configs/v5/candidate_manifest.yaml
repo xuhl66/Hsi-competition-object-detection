@@ -1,0 +1,86 @@
+version: 5
+candidate: co_dino_vitl_fdr_salience_fold0
+architecture: converged V4 Co-DINO ViT-L plus D-FINE FDR/GO-LSD/LQE and scale-aware salience
+queries: 1500
+training_heads:
+  - Co-DINO query head with six-layer FDR and LQE
+  - GO-LSD encoder/decoder matching union with IoU-weighted DDF
+  - RPN/ROI collaborative head
+  - ATSS collaborative head
+  - P2-P5 scale-aware salience heads
+initialization:
+  parent: V4 epoch-30 primary EMA
+  parent_runner_attempted_iterations: 42180
+  parent_successful_adamw_steps: 42168
+  parent_amp_skipped_steps: 12
+  spectral_reparameterization: exact raw16 collapse
+  fdr_lqe: official D-FINE-X Objects365-to-COCO tensors
+  class_head_from_dfine: false
+  optimizer_inherited: true
+  optimizer_parent_states: 1015
+  optimizer_target_transplanted_states: 1030
+  optimizer_fresh_states: 60
+  optimizer_preserved_trainable_fraction: 0.9972974988713673
+  semantic_salience_moment_clones: 15
+  semantic_salience_moment_policy: explicit heuristic retained for this running lineage, not a default for future versions
+  ema_inherited: true
+  ema_inherited_updates: 42180
+  fp16_parent_scaler_serialized: true
+  fp16_parent_scale: 8.0
+  fp16_parent_growth_tracker: 1535
+  fp16_scaler_inherited: false
+  fp16_bootstrap_policy: fresh recalibration for changed V5 graph
+transition:
+  start_update: 0
+  fully_active_update: 4000
+  exact_v4_forward_at_update_zero: true
+single_model: true
+official_metric: mAP@[0.50:0.95]
+formal_config: configs/v5/co_dino_vitl_fdr_salience_fold0.py
+schedule_coordinate: runner attempted iterations
+soft_horizon_attempted_updates: 118104
+nominal_attempted_updates_per_epoch: 1406
+successful_optimizer_steps: derived from AdamW step at every checkpoint
+amp_skipped_steps: attempted iterations minus successful optimizer steps
+validation_interval_attempted_updates: 2812
+checkpoint_interval_attempted_updates: 2812
+augmentation:
+  sensor_band_order_assumption: false
+  native_16_band_mosaic:
+    probability: 0.18
+    active_updates_approximately: [4000, 36000]
+  mixup:
+    probability: 0.0
+resume_state:
+  - raw_parameters
+  - ema_parameters
+  - optimizer
+  - fp16_scaler
+  - epoch
+  - attempted_iteration
+  - successful_optimizer_step
+  - amp_skip_count
+  - v5_transition
+rng_stream_bitwise_restored: false
+state_load_gate:
+  contract: configs/v5/state_load_contract.json
+  strict_model_and_ema_schema: true
+  optimizer_name_order_shape_and_hyperparameters: true
+  finite_weights_and_moments: true
+  ordinary_resume_requires_fp16_scaler: true
+  source_and_upstream_lock: true
+ema_lineage:
+  update_order: pre optimizer step, inherited from V4
+  smooths_transition_buffer: true
+  redesign_requires_new_version_boundary: true
+promotion_inference:
+  checkpoint: best single EMA checkpoint
+  widths: [1280]
+  flips: [none, horizontal]
+  merge: classwise Gaussian Soft-NMS
+  iou_threshold: 0.55
+  sigma: 0.5
+  score_threshold: 0.0001
+  max_detections: 300
+  soup_swa_slicing_wbf: false
+external_pretraining_declared: true
