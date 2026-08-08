@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "version": "v6",
+  "purpose": "fail_closed_training_and_inference_runtime",
+  "files": {
+    "configs/v6/candidate_manifest.yaml": "9f6807c849ce18a641b59a0e5d1c2553acc4026da401517a9dab706ea9930f77",
+    "configs/v6/co_spec_dino_vitl_fold0.py": "deffb5c7fcb845a3ce0c741a9075a1b201487c94e7c221f27114076f0f3f9f14",
+    "configs/v6/co_spec_dino_vitl_full.py": "f3d07fce40ce53ee3a69748417894cd31b045f83e2631fdc43f526e2e51fddb9",
+    "configs/v6/co_spec_dino_vitl_smoke.py": "f212a46d509f13b6b58ceb079e8732a69be3225d1260dd594c13d97a85adf92e",
+    "src/hod26/v6/__init__.py": "8a3d560e3697a0d71a5bade187282aadcd6817fabc5a600b805e44fb168da61b",
+    "src/hod26/v6/checkpoint.py": "746c4b0a46bbcec2d1378d7b856c261570e52399515ff6dc46f77bf333f7469f",
+    "src/hod26/v6/compat.py": "4e79ad5e3111fe04876ae627c8708d7b0819c488559200a7a87a2ad55aaa343a",
+    "src/hod26/v6/constants.py": "b364dc24139c301bd770bf7e57e7fdae3bb900e3681414294d159410a44de0d0",
+    "src/hod26/v6/data.py": "5a0ef15a0a73546ac95723075fd0f0c792a660fb4d75ffd3d127b36b38908513",
+    "src/hod26/v6/evaluate.py": "bc800f3d277fecc65696dccbd7473ad6e54b3b0479663954500039241b2ef3b6",
+    "src/hod26/v6/hooks.py": "f9e2f5ae079cfd40cfd00758497becc115ae7bfca7a4b6bb157dbf7dd5ff82cd",
+    "src/hod26/v6/infer.py": "18be6c398a6fd24a5db9a9dd36ea38d6bc8cc4e98e3dab2ed9e7e97b11947b23",
+    "src/hod26/v6/load_gate.py": "6d5e0d45e2d7a88359716244891de97aa68eb638bd6441621eb0e50fc9e28a5a",
+    "src/hod26/v6/model.py": "2cf87ca4dea1be861c0eb1feff51e713f727969b1907628e93ad74b290d1edeb",
+    "src/hod26/v6/optim.py": "bcab824072ae8451c4d13406684d48bf2fa97ac2c7ef7d2296c902642ca24e05",
+    "src/hod26/v6/prepare.py": "a5120ce9ae259849fbbda89964b26a658e88fb93b59101c025b7803f5b83cd79",
+    "tools/eval_v6_promotion.sh": "9c6e6a2663a5911a2788b65bf43a6e26de4c63ac61c06b9ecdabb24c84bcf2a1",
+    "tools/infer_v6_champion.sh": "db9d6be729d579fea63a49009adbd9f64feb6426b9a2f2c590490cc2ee9a3d64",
+    "tools/launch_v6_detached.sh": "e7f9c9549d0c15433b5714ade87aeee8e8f9312be515c3ba16b1ddf093e31c11",
+    "tools/launch_v6_full_detached.sh": "af7af4c18faaf4969adc5df3bd4549a1c4faee22c6427f3d9be18996a8015b11",
+    "tools/prepare_v6.sh": "3071e9a2187a441f17fc50a7edeaeb604f1ec41fc3ba7a37b71b5d9cc84c5f6c",
+    "tools/smoke_v6.sh": "dc35f8f31e1f7c7719e9668eea36ffe0b8a48e4ef5182e5559f29c959644606b",
+    "tools/train_v6.sh": "2ecc282ca460bc800036de7c7422b2c055505621535a61e05911b942c093ae40",
+    "tools/train_v6_full.sh": "8db8dd19395ce17ab1f408a4ab9492260dfd734f2cc9781130456b72ff74170f"
+  },
+  "upstream": {
+    "path": "storage/upstream/Co-DETR",
+    "commit": "26653521e47157fdd819e764b4bb949057ea9f3b",
+    "working_diff_sha256": "60ba8524725e45e6aa5f5adf5dfcf3febf1daefbe19a3b933b48794ab81eb63f"
+  }
+}

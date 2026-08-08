@@ -1,6 +1,6 @@
 version: v6
 candidate: cospec_dino_vitl_fold0
-status: design_locked_pending_implementation_and_exact_smoke
+status: exact_smoke_and_formal_audit_passed_ready_for_manual_fold0_launch
 branch: agent/v6-independent
 
 objective:
@@ -50,9 +50,9 @@ architecture:
     - 597.2
   new_modules:
     - wavelength_aware_raw_shape_and_didlambda_encoder
-    - specdetr_style_self_excited_subpixel_blocks
-    - p2_p3_p4_bidirectional_spectral_spatial_cross_attention
-    - supervised_spectral_one_to_many_proposal_route
+    - specdetr_inspired_self_excited_spectral_blocks
+    - p2_p3_p4_bidirectional_dcnv2_spectral_visual_fusion
+    - direct_supervised_spectral_p2_to_p7_one_to_many_proposal_route
     - align_detr_quality_aligned_classification_loss
   removed_modules:
     - fdr
@@ -79,7 +79,7 @@ generalization:
   fixed_sensor_shift_robustness_evaluation: true
   final_all_3000_official_images_phase: true
 
-provisional_training_contract:
+training_contract:
   global_batch: 2
   fold0_images: 2400
   attempted_updates_per_epoch_without_repeat: 1200
@@ -88,15 +88,21 @@ provisional_training_contract:
     - name: public_detector_and_hsi_fusion_stabilization
       updates: [0, 6000]
     - name: capacity
-      updates: [6000, 56000]
+      updates: [6000, 56400]
     - name: clean_high_resolution
-      updates: [56000, 80000]
+      updates: [56400, 80400]
     - name: localization_and_quality_polish
-      updates: [80000, 96000]
+      updates: [80400, 96000]
+  peak_learning_rates:
+    detector: 0.0000125
+    visual_vit_top_approx: 0.0000125
+    visual_layer_decay: 0.90
+    new_hsi_and_fusion: 0.0001
+    remapped_class_coordinates: 0.00005
   validation_interval_attempted_updates: 2400
   checkpoint_interval_attempted_updates: 2400
   soft_horizon_extension: same_checkpoint_only
-  exact_values_locked_after_full_resolution_smoke: true
+  exact_values_locked_in_config: true
 
 promotion_gate:
   inference_protocol: v4_epoch30_frozen_champion_protocol
@@ -118,5 +124,5 @@ submission_independence:
 
 open_decisions:
   external_pretraining_written_permission: organizer_pending_user_has_authorized_provisional_use
-  final_full_data_policy: recommend_stateful_v6_fold0_to_v6_full_continuation
+  final_full_data_policy: confirmed_stateful_v6_fold0_to_v6_full_continuation
   load_specdetr_spod_checkpoint: false_recommended

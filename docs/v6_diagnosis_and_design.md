@@ -1,10 +1,12 @@
 # V5 全量诊断与 V6 独立方案
 
-状态日期：2026-08-08
+状态日期：2026-08-09
 
 工作分支：`agent/v6-independent`
 
-结论状态：V5/V5R 已淘汰；V6 设计冻结，尚未实现、尚未 smoke、不可启动正式训练。
+结论状态：V5/V5R 已淘汰；V6 已实现并通过最终源码哈希绑定的双卡 exact smoke、
+Fold0 audit-only 和 all-3000 continuation audit-only。正式长训尚未启动，等待用户
+手动执行 detached 启动命令。
 
 ## 1. 结论先行
 
@@ -223,16 +225,18 @@ SHA-256:
 
 ### 5.2 波长感知 HSI 编码器（SpecDETR 核心思想）
 
-新 `WavelengthAwareSpecEncoder` 同时编码三种互补表示：
+实际 `HOD26V6WavelengthViT` 的光谱流同时编码四种互补表示：
 
 1. 全训练集 robust band normalization 后的 raw16；
 2. 每像素去强度/L2 归一化的 spectral-shape16，降低曝光和照明强度漂移；
 3. 按真实 `Δλ` 计算的 15 维 `dI/dλ`，保留材料光谱边缘。
+4. 由 4 组正弦/余弦构成的 8 维固定波长 basis，显式注入非均匀物理波长位置。
 
-16 个 band token 使用固定真实波长位置编码；空间部分采用 SpecDETR 的
-self-excited subpixel attention 思路，在高分辨率特征上放大细小目标响应。为了在
-双 4090 上可行，光谱 encoder 在主图 1/2 空间尺度运行，并输出 P2/P3/P4；主
-ViT-L 仍保持 1280 宽度，不能用降低主输入分辨率来换显存。
+光谱空间部分采用 SpecDETR 启发的 bounded self-excitation residual block，在
+高分辨率特征上放大细小目标响应；最终代码没有声称实现其原论文完整 subpixel
+模块。为了在双 4090 上可行，光谱 encoder 在主图 1/2 空间尺度运行，并输出
+P2/P3/P4；主 ViT-L 仍保持 1280 宽度。光谱编码器保持 FP32 数值岛，新卷积块采用
+batch-size-one-safe FP32 GroupNorm，ViT-L、融合和检测头继续使用 AMP。
 
 SpecDETR 是 2025 ISPRS P&RS 的 HSI 专用 detector，官方代码和权重已公开；其
 SPOD 报告为 0.856 mAP、0.863 AP75，模型约 16.1M 参数。V6 使用其成熟的光谱-
@@ -243,7 +247,8 @@ checkpoint 适配风险。参考：[SpecDETR 官方仓库](https://github.com/Zh
 ### 5.3 真正的双流融合，不再允许光谱门自动归零
 
 旧 `base + tanh(gate) * spectral_delta` 删除。新融合遵循 S2ADet 已验证的
-spectral-spatial 双流聚合思想，在 P2/P3/P4 使用轻量 deformable cross-attention：
+spectral-spatial 双流聚合思想，在 P2/P3/P4 使用显存可承受的双向 DCNv2
+可变形采样融合：
 
 - visual query 从 HSI 特征取样材料/边缘证据；
 - HSI query 从 visual 特征获得形状和语义；
@@ -259,9 +264,10 @@ S2ADet 训练权重，因此只采用论文中的双流结构证据，不引入�
 
 ### 5.4 光谱提议路由：直接监督弱类和小目标
 
-在融合后的 P2/P3 上增加一个训练期 one-to-many 光谱检测路由，具有完整的 18 类
-分类、中心/尺度和 box loss，不再只监督一个无类别 mask。该路由的高质量正样本
-坐标按 Co-DETR 的 collaborative assignment 方式注入主 decoder query。
+在融合后的 P2/P3/P4 上建立光谱特征，并连续下采样形成 P5/P6/P7；训练期
+one-to-many 光谱检测路由具有完整的 18 类分类、centerness 和 box loss，不再只
+监督一个无类别 mask。该路由的高质量正样本坐标按 Co-DETR collaborative
+assignment 注入主 decoder query。
 
 效果目标：
 
@@ -312,7 +318,7 @@ V6 不包含：FDR、GO-LSD、LQE、coarse-box anchor、V5 salience、V5 transit
 验证除原始 fold0 外，额外报告固定的 4 种传感器扰动视图 robustness mAP；它只作
 泛化门禁，不替代官方原始 mAP，也不参与手工逐类阈值拟合。
 
-## 6. 训练设计（正式启动前仍须由 exact smoke 固化）
+## 6. 已固化的训练设计
 
 ### 6.1 Fold0 能力与收敛阶段
 
@@ -322,37 +328,59 @@ V6 不包含：FDR、GO-LSD、LQE、coarse-box anchor、V5 salience、V5 transit
 | successful update 区间 | 目的 |
 | --- | --- |
 | 0–6k | 公开 detector 稳定、HSI/fusion 打开；无 Mosaic |
-| 6k–56k | 主容量学习；多尺度、Mosaic 0.25、传感器域增强 |
-| 56k–80k | 1280 clean refinement；关闭 Mosaic |
-| 80k–96k | 低学习率 Align/AP75/弱类 polish |
+| 6k–56.4k | 主容量学习；多尺度、Mosaic 0.25、传感器域增强 |
+| 56.4k–80.4k | 1152/1280 clean refinement；关闭 Mosaic |
+| 80.4k–96k | 1280 低学习率 Align/AP75/弱类 polish |
 
 设计依据：V4 在 42,168 successful updates 左右达到 e30 最佳；V6 新增从零开始且
 有直接监督的 HSI 主干和辅助路由，给出超过两倍的可信学习窗口。96k 是软上限，
 不是停止命令；若边界仍刷新 AP75、APs、弱类或 macro，必须从同一 checkpoint
 延长低学习率尾段。
 
-- visual ViT-L LR：base 的 0.1×；
-- detector/decoder：1×；
-- 新 HSI/fusion/aux route：4×，不再使用定位 8×；
+- detector/decoder peak LR：`1.25e-5`（1×）；
+- visual ViT-L 顶层 peak LR：约 `1.25e-5`，24 层按 `0.90` LLRD，最早层约
+  `9e-7`；这不是冻结主干；
+- 新 HSI/fusion/aux route peak LR：`1.0e-4`（8×）；
+- 重新映射的类别坐标 peak LR：`5.0e-5`（4×）；
+- LR 由 successful AdamW update 驱动：`0.02→1.0` warmup 到 1.5k，6k 前平台，
+  再按 `0.30@56.4k / 0.06@80.4k / 0.015@92k / 0.004@96k` 连续余弦下降；
+- 使用 FP64 汇总的稳定全局 L2 gradient clipping (`max_norm=0.1`)，避免 3.68 亿
+  参数的 FP32 norm reduction 溢出后静默清零梯度；
 - EMA：只在成功 optimizer step 后更新，control buffer 不平滑；
 - validation/checkpoint：每 2,400 attempted updates；
 - checkpoint 包含 model/raw+EMA、optimizer、scaler、attempted/successful/skip
   计数及源码/配置哈希；
 - 普通 resume 必须通过 V6 fail-closed gate 和两段式 smoke。
 
-精确吞吐、显存和 wall time 必须以 1280、batch1/GPU、DDP、AMP、activation
-checkpointing 的 exact smoke 为准，未 smoke 前不提供正式长训命令。
+80 epoch 是 96,000 attempted update 的软上限；若 AMP skip 使 successful update
+尚未走完调度，或边界指标仍上升，必须从同一 checkpoint 增加 epoch，不得重头。
 
 ### 6.2 全 3,000 官方图阶段
 
-fold0 可信收敛并选定单一 V6 checkpoint 后，推荐在同一 V6 lineage 内恢复完整
+fold0 可信收敛并选定单一 V6 checkpoint 后，已确认在同一 V6 lineage 内恢复完整
 optimizer/EMA，把 600 张 held-out 图加入训练，用低学习率 clean schedule 继续。
 新增 successful updates 取“fold0 最佳 successful updates 的 20%”，对应新增
 20% 数据曝光；到时固定整数和 SHA，不凭感觉指定 epoch。
 
 这仍是一个模型的一套连续训练配方：外部祖先只有公开 Co-DINO，V4/V5/V5R
 不在 lineage 中。若为了最简单的审查叙述坚持从公开 checkpoint 在 3,000 图上
-重新训练，则需额外再跑一条完整长训且没有 final holdout；见第 9 节待决定项。
+重新训练，则需额外再跑一条完整长训且没有 final holdout；当前不采用该路线。
+
+### 6.3 最终工程放行证据
+
+- 唯一公开源 checkpoint SHA-256：`733d2ccd...256c`；
+- 派生 V6 public init SHA-256：`65f606fd...3357`；provenance SHA-256：
+  `b37bb377...5915`；
+- 最终 runtime source-lock SHA-256：`be72c2e8...747a`，锁定 24 个运行文件；
+- 最终 exact smoke：`storage/v6/smoke/exact_20260809_040016`；1280×640、双卡、
+  Mosaic phase 1 → checkpoint → clean phase 2 resume；
+- phase 1/2 为 `4/4 → 8/8` successful AdamW updates，AMP skip 为 0，EMA age
+  为 8，scaler 为 1.0，1026 个 optimizer state 的 step/moments 全有限且连续；
+- 单卡峰值显存 `21,124 MiB`；GroupNorm 修复后前四步 pre-clip global norm 为
+  `1361 / 1108 / 636 / 720`，不再由零填充区域的 LayerNorm bias 支配；
+- 26 项 V6 单元/诊断测试、Python compile、8 个 shell 的 `bash -n` 均通过；
+- 预计 Fold0 96k soft horizon 约需 `55–75` 小时（含 40 次验证与 checkpoint）；
+  正式首个完整 epoch 后应按实测稳态吞吐重算，不把该估计当停止条件。
 
 ## 7. 晋级与提交门禁
 
@@ -405,24 +433,46 @@ v6/
 Git 分支保留历史不影响提交独立性；审查方拿到的是上述导出的干净 V6 包，而不是
 整个实验仓库的所有历史版本。
 
-## 9. 仍需用户决定或持续追踪
+## 9. 仍需持续追踪（当前无需再次确认）
 
 1. **外部预训练规则风险（最高）**：公开可下载不等于主办方已经允许外部数据
    预训练。此前用户已授权在主办方未回复时继续这条提分路线，所以 V6 按公开
    Co-DINO 实施；但进入最终获奖审查前仍应取得书面许可。若明确禁止，必须切换
    同架构的 official-data-only 初始化，V4 也会面临同一资格风险。
-2. **最终全数据血缘选择**：推荐“V6 fold0 可信收敛 → 同一 V6 完整状态继续
-   3,000 图”，分数、算力和可复现性最好；备选是再从公开 checkpoint 重跑
-   3,000 图，叙述最短但代价更大且没有最终验证。需要用户在 full-data 阶段前
-   最终确认，不阻塞当前 V6 实现和 smoke。
-3. **SpecDETR 权重**：当前方案只用其公开架构思想，不加载 SPOD checkpoint，
-   从而保持唯一外部权重来源。若用户要求加载 SPOD 权重，必须新增第二份公开
-   权重 provenance、30→16 band 映射和规则风险；当前不推荐。
-4. **显存门禁**：V5R 已使用约 21.2 GiB/GPU。V6 必须先 exact smoke；优先采用
-   activation checkpointing、半尺度 HSI encoder 和内存高效 cross-attention，
-   不牺牲主干 1280 输入。若仍 OOM，再向用户报告结构缩减方案，不能静默降级。
+2. **最终全数据血缘已确认**：采用“V6 fold0 可信收敛 → 同一 V6 完整状态继续
+   3,000 图”，严格继承 model/EMA/AdamW/scaler；不得从当前 smoke checkpoint
+   进入 full，必须使用最终晋级且已收敛的 Fold0 checkpoint。
+3. **SpecDETR 权重继续禁用**：只采用其公开架构思想，不加载 SPOD checkpoint，
+   保持唯一外部权重来源；不再等待用户确认。
+4. **显存门禁已通过**：最终 1280×640 双卡 exact smoke 峰值为
+   `21,124 MiB/GPU`，保留了 ViT-L、P2、半尺度 HSI encoder 与 activation
+   checkpointing。正式训练不得静默增大 batch/canvas 或缩减结构；若环境变化
+   导致 OOM，必须先报告再调整。
 
-## 10. 研究选择记录
+## 10. 计划与实际实现对照
+
+核心计划均已实现：16-band 物理波长编码、P2/P3/P4 双流融合、P2–P7 直接监督
+光谱 proposal、Align-DETR 风格 IA-BCE、弱类 effective-number 权重、物理传感器
+增强、capacity-only native HSI Mosaic、successful-update LR、post-successful-step
+EMA、鲁棒性门禁、冻结冠军推理协议和 stateful all-3000 continuation。
+
+最终实现相对早期文字方案有四项有意修正：
+
+1. “deformable cross-attention”落实为双向 DCNv2 sampling fusion，以便在双 4090
+   上保留 1280 输入和 P2；不是删减为标量 gate。
+2. SpecDETR 采用 self-excitation 思想但未伪称实现完整 subpixel 模块；波长位置由
+   真实 `dI/dλ + 8D basis` 表达。
+3. 早期草案的 visual 0.1× / new 4× 被实际配置修正为 ViT 0.90 LLRD、new 8×、
+   class 4×；上述最终值已由真实反向 smoke 验证数值健康。
+4. exact smoke 额外发现并修复 IA-BCE FP16、光谱 Jacobian FP16、逐像素 LN
+   零填充梯度爆炸、MMCV FP32 global-norm 溢出、EMA total-iter 和 checkpoint
+   metadata dispatch 六类工程缺陷；这些不是可忽略告警。
+
+明确未加入且不是遗漏：MixUp、重复弱类图片、OSSDet 二值目标 mask（已由更强的
+18 类+box 直接光谱监督替代）、DQ-DETR counting、FDR/LQE、Soup/SWA/full TTA。
+后处理仍冻结为 V4 公榜验证过的两视图 Soft-NMS 协议，先隔离验证模型级收益。
+
+## 11. 研究选择记录
 
 - 采用 Co-DINO ViT-L：官方公开通用检测上限最高且已在本地夺冠。
 - 采用 SpecDETR 表示思想：与 HSI、小目标、AP75 直接匹配，2025 期刊、代码公开。
