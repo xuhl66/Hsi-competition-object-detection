@@ -1,0 +1,122 @@
+version: v6
+candidate: cospec_dino_vitl_fold0
+status: design_locked_pending_implementation_and_exact_smoke
+branch: agent/v6-independent
+
+objective:
+  primary: kaggle_private_map_50_95
+  submission_model_count: 1
+  diagnostic_only:
+    - ap50
+    - speed
+    - parameter_count
+
+independent_lineage:
+  external_checkpoint_count: 1
+  allowed_checkpoint:
+    name: official_co_dino_vitl_objects365_to_coco
+    url: https://huggingface.co/zongzhuofan/co-detr-vit-large-coco/resolve/main/pytorch_model.pth
+    sha256: 733d2ccde180a55151a68a6cab7c9f42b117d24d38d6197b37caf3189243256c
+  prohibited_parents:
+    - any_v4_checkpoint
+    - faulty_v5_epoch18
+    - any_v5r_checkpoint
+    - soup_or_swa_checkpoint
+  optimizer: fresh_v6_finetune
+  ema: fresh_post_successful_optimizer_step
+  fp16_scaler: fresh_then_strict_resume
+  trainable_scope: full_v6_model_not_head_only
+
+architecture:
+  name: CoSpec-DINO ViT-L
+  public_detector: Co-DINO ViT-L
+  input_bands: 16
+  wavelengths_nm:
+    - 464.5
+    - 472.8
+    - 480.2
+    - 489.3
+    - 499.0
+    - 508.2
+    - 516.3
+    - 526.1
+    - 534.7
+    - 544.3
+    - 552.3
+    - 561.8
+    - 571.2
+    - 580.5
+    - 588.1
+    - 597.2
+  new_modules:
+    - wavelength_aware_raw_shape_and_didlambda_encoder
+    - specdetr_style_self_excited_subpixel_blocks
+    - p2_p3_p4_bidirectional_spectral_spatial_cross_attention
+    - supervised_spectral_one_to_many_proposal_route
+    - align_detr_quality_aligned_classification_loss
+  removed_modules:
+    - fdr
+    - go_lsd
+    - lqe
+    - coarse_box_anchor
+    - v5_multiscale_salience
+    - learnable_scalar_spectral_fusion_gate
+
+weak_and_small_object_policy:
+  train_coco_small_fraction: 0.701961
+  repeat_weak_images: false
+  class_balanced_matched_positive_loss: true
+  class_weight_policy: sqrt_effective_number_with_cap
+  dense_high_resolution_auxiliary_detection: true
+  query_count_module: false
+  reason_no_dynamic_count: annotated_objects_per_image_p50_p90_are_3_and_6
+
+generalization:
+  wavelength_physical_sensor_augmentation: true
+  spectral_shape_intensity_invariant_path: true
+  native_hsi_mosaic_capacity_stage_only: true
+  mixup: false
+  fixed_sensor_shift_robustness_evaluation: true
+  final_all_3000_official_images_phase: true
+
+provisional_training_contract:
+  global_batch: 2
+  fold0_images: 2400
+  attempted_updates_per_epoch_without_repeat: 1200
+  soft_horizon_attempted_updates: 96000
+  stages:
+    - name: public_detector_and_hsi_fusion_stabilization
+      updates: [0, 6000]
+    - name: capacity
+      updates: [6000, 56000]
+    - name: clean_high_resolution
+      updates: [56000, 80000]
+    - name: localization_and_quality_polish
+      updates: [80000, 96000]
+  validation_interval_attempted_updates: 2400
+  checkpoint_interval_attempted_updates: 2400
+  soft_horizon_extension: same_checkpoint_only
+  exact_values_locked_after_full_resolution_smoke: true
+
+promotion_gate:
+  inference_protocol: v4_epoch30_frozen_champion_protocol
+  requires:
+    - macro_map_improvement_beyond_evaluation_noise
+    - ap75_non_regression
+    - aps_non_regression
+    - weak4_non_regression
+    - no_strong14_only_gain
+    - fixed_sensor_shift_robustness_non_regression
+    - credible_convergence_not_boundary_best
+
+submission_independence:
+  v6_namespace_must_not_import: [hod26.v4, hod26.v5, hod26.v5r]
+  final_checkpoint_count: 1
+  final_prediction_head: shared_main_decoder_only
+  include_public_checkpoint_provenance: true
+  include_source_environment_commands_flops_and_hashes: true
+
+open_decisions:
+  external_pretraining_written_permission: organizer_pending_user_has_authorized_provisional_use
+  final_full_data_policy: recommend_stateful_v6_fold0_to_v6_full_continuation
+  load_specdetr_spod_checkpoint: false_recommended

@@ -1,7 +1,9 @@
 # HOD Challenge 2026 — single-model competition workspace
 
 > This is an evolving candidate workspace, not a frozen final submission.
-> V3 is one candidate and later V4/V5/... versions may replace it. The
+> The current public-board control is V4; V5/V5R were rejected and the active
+> design branch is the independent V6 candidate described in
+> [docs/v6_diagnosis_and_design.md](docs/v6_diagnosis_and_design.md). The
 > version-neutral final-delivery procedure is in
 > [docs/code_review/README.md](docs/code_review/README.md).
 
