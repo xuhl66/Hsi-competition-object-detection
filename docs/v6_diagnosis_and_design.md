@@ -371,8 +371,8 @@ optimizer/EMA，把 600 张 held-out 图加入训练，用低学习率 clean sch
 - 唯一公开源 checkpoint SHA-256：`733d2ccd...256c`；
 - 派生 V6 public init SHA-256：`65f606fd...3357`；provenance SHA-256：
   `b37bb377...5915`；
-- 最终 runtime source-lock SHA-256：`be72c2e8...747a`，锁定 24 个运行文件；
-- 最终 exact smoke：`storage/v6/smoke/exact_20260809_040016`；1280×640、双卡、
+- 最终 runtime source-lock SHA-256：`143ad356...f481`，锁定 24 个运行文件；
+- 最终 exact smoke：`storage/v6/smoke/exact_20260809_041209`；1280×640、双卡、
   Mosaic phase 1 → checkpoint → clean phase 2 resume；
 - phase 1/2 为 `4/4 → 8/8` successful AdamW updates，AMP skip 为 0，EMA age
   为 8，scaler 为 1.0，1026 个 optimizer state 的 step/moments 全有限且连续；
