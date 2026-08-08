@@ -1,6 +1,11 @@
-# HOD Challenge 2026 — final single-model pipeline
+# HOD Challenge 2026 — single-model competition workspace
 
-This repository contains the competition pipeline for:
+> This is an evolving candidate workspace, not a frozen final submission.
+> V3 is one candidate and later V4/V5/... versions may replace it. The
+> version-neutral final-delivery procedure is in
+> [docs/code_review/README.md](docs/code_review/README.md).
+
+The original V1 baseline in this repository used:
 
 ```text
 16-bit 4×4 spectral mosaic

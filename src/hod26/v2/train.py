@@ -70,7 +70,9 @@ def main() -> None:
     )
     cfg = YAMLConfig(args.config, **updates)
     if args.resume or args.tuning:
-        cfg.yaml_cfg.setdefault("HSIHGNetv2", {})["pretrained"] = False
+        for backbone_name in ("HSIHGNetv2", "HFHSIHGNetv2"):
+            if backbone_name in cfg.yaml_cfg:
+                cfg.yaml_cfg[backbone_name]["pretrained"] = False
     solver = TASKS[cfg.yaml_cfg["task"]](cfg)
     if args.test_only:
         solver.val()

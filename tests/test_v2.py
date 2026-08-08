@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 import torch
 
+from hod26.v2.infer import _keep_best_class_per_query
+
 
 UPSTREAM = Path("storage/upstream/DEIM")
 V2_DATA = Path("storage/v2/dataset/fold0/train.json")
@@ -138,3 +140,20 @@ def test_v2_coco_view_is_complete_and_0_based() -> None:
         annotation["bbox"][2] > 0 and annotation["bbox"][3] > 0
         for annotation in payload["annotations"]
     )
+
+
+def test_single_label_inference_keeps_only_query_argmax() -> None:
+    logits = torch.tensor(
+        [[[0.1, 0.9, 0.2], [2.0, -1.0, 1.0]]],
+        dtype=torch.float32,
+    )
+    boxes = torch.rand(1, 2, 4)
+
+    filtered = _keep_best_class_per_query(
+        {"pred_logits": logits, "pred_boxes": boxes}
+    )
+
+    assert filtered["pred_boxes"] is boxes
+    assert filtered["pred_logits"][0, 0, 1] == logits[0, 0, 1]
+    assert filtered["pred_logits"][0, 1, 0] == logits[0, 1, 0]
+    assert torch.isneginf(filtered["pred_logits"]).sum().item() == 4

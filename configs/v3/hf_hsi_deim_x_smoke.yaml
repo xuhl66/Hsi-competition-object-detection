@@ -1,0 +1,24 @@
+__include__:
+  - ./hf_hsi_deim_x_fold0.yaml
+
+# Engineering-only check: one distributed optimizer update, full Fold0
+# evaluation, EMA update, and complete checkpoint serialization.
+epoches: 1
+max_optimizer_updates: 1
+# AMP can legitimately reject its first high-scale batch. Permit several
+# batches so the smoke proves at least one real optimizer and EMA update.
+max_train_batches: 8
+eval_every: 1
+checkpoint_freq: 1
+print_freq: 1
+output_dir: storage/v3/smoke
+
+convergence:
+  min_optimizer_updates: 50000
+  patience_evals: 10
+  max_lr_ratio: 0.006
+  thresholds:
+    map_50_95: 0.0005
+    map_75: 0.0008
+    map_small: 0.0010
+    weak4_map_50_95: 0.0020

@@ -142,3 +142,31 @@ Promotion continues to use the frozen public-board protocol: one best EMA
 checkpoint, width 1280, identity plus horizontal views, classwise Gaussian
 Soft-NMS at IoU 0.55 with sigma 0.5, thresholds 0.0001 and top 300. Soup, SWA,
 slicing, WBF and larger TTA do not enter model-version comparison.
+
+## Final V5R outcome (2026-08-08)
+
+V5R reached its high-precision Fold0 best at epoch 40:
+
+- macro mAP from per-class AP: 0.717700;
+- reported bbox mAP / AP50 / AP75: 0.718 / 0.969 / 0.849;
+- small / medium / large AP: 0.681 / 0.763 / 0.749;
+- weak-four mAP / AP75: 0.48932 / 0.49197.
+
+The protected checkpoint is
+`storage/v5r/protected_candidates/v5r_fold0_epoch40_macro_0.717700.pth`,
+SHA-256
+`e23fc26692c8282d93d2d1d40d062cebf5c831707d1261343bcdda7c5ecd613d`.
+
+The localization phase did not recover the model. At epoch 80, bbox mAP was
+0.711, AP75 was 0.836, weak-four mAP was 0.4716 and weak-four AP75 was 0.4557.
+Epochs 72/74/76/78/80 formed a flat-to-declining low-LR window, while the best
+point remained far back at epoch 40. Training was therefore terminated during
+epoch 81 after satisfying the convergence-stop evidence.
+
+Epoch 40 was evaluated with exactly the frozen V4 promotion protocol. Kaggle
+submission 55350021 scored 0.66977, versus 0.67686 for the V4 epoch-30 control
+(delta -0.00709). Because the inference protocol was identical, this is a
+model/checkpoint failure rather than a TTA or NMS confound. V5R is not promoted
+and must not be the default parent of V6. Its checkpoints remain reproducible
+failure evidence only; the faulty original V5 lineage remains permanently
+prohibited.

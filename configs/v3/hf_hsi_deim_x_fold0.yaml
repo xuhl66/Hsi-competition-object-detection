@@ -1,0 +1,199 @@
+__include__:
+  - ../v2/deim_dfine_x_hsi_pilot.yaml
+
+# V3 keeps the proven three-scale D-FINE-X detector and injects stride-4
+# spectral/spatial detail into P3. New residual gates start at zero, so tuning
+# from the submitted V2 e228 checkpoint preserves its initial function.
+DEIM:
+  backbone: HFHSIHGNetv2
+
+HFHSIHGNetv2:
+  name: B5
+  input_bands: 16
+  spectral_channels: [64, 96, 128, 192]
+  return_idx: [1, 2, 3]
+  freeze_stem_only: false
+  freeze_at: -1
+  freeze_norm: false
+  pretrained: false
+  local_model_dir: storage/pretrained/v2/hgnetv2/
+  detail_context_ratio: 8
+
+train_dataloader:
+  dataset:
+    type: HSICocoDetection
+    img_folder: data/raw/data_train/data_train/VIS
+    ann_file: storage/v2/dataset/fold0/train.json
+    stats_file: storage/cache/band_stats.json
+    return_masks: false
+    # Validation has only eight stone_block images, so no class receives an
+    # unstable 4x treatment. All four consistently weak classes use the same
+    # bounded 2x image exposure.
+    repeat_class_factors:
+      5: 2
+      8: 2
+      14: 2
+      16: 2
+    transforms:
+      type: HSICompose
+      ops:
+        - type: HSIMosaic
+          output_size: [256, 512]
+          rotation_range: 7
+          translation_range: [0.08, 0.08]
+          scaling_range: [0.65, 1.35]
+          probability: 1.0
+          fill_value: 0.0
+        - type: HSISpectralAugment
+          p: 0.8
+          gain: 0.12
+          slope: 0.06
+          noise_std: 0.008
+          band_dropout: 0.06
+        - type: RandomIoUCrop
+          min_scale: 0.60
+          max_scale: 1.0
+          min_aspect_ratio: 1.2
+          max_aspect_ratio: 2.4
+          p: 0.40
+        - {type: SanitizeBoundingBoxes, min_size: 2}
+        - {type: RandomHorizontalFlip, p: 0.5}
+        - {type: HSIRandomVerticalFlip, p: 0.08}
+        - {type: Resize, size: [512, 1024], antialias: true}
+        - {type: SanitizeBoundingBoxes, min_size: 2}
+        - {type: ConvertBoxes, fmt: cxcywh, normalize: true}
+      policy:
+        name: stop_epoch
+        # 0-3 stabilization; 4-149 mosaic/crop exploration; 150-219
+        # no-mosaic crop/spectral refinement; 220+ clean localization.
+        epoch: [4, 150, 220]
+        ops:
+          - HSIMosaic
+          - HSISpectralAugment
+          - RandomIoUCrop
+          - RandomHorizontalFlip
+          - HSIRandomVerticalFlip
+      mosaic_prob: 0.45
+  shuffle: true
+  total_batch_size: 22
+  num_workers: 4
+  drop_last: true
+  collate_fn:
+    type: HSIBatchCollateFunction
+    stop_epoch: 220
+    ema_restart_decay: 0.9999
+    widths: [896, 960, 1024]
+    mixup_prob: 0.20
+    mixup_epochs: [4, 100]
+
+val_dataloader:
+  dataset:
+    type: HSICocoDetection
+    img_folder: data/raw/data_train/data_train/VIS
+    ann_file: storage/v2/dataset/fold0/val.json
+    stats_file: storage/cache/band_stats.json
+    return_masks: false
+    transforms:
+      type: Compose
+      ops:
+        - {type: Resize, size: [512, 1024], antialias: true}
+  shuffle: false
+  total_batch_size: 22
+  num_workers: 4
+  drop_last: false
+  collate_fn:
+    type: HSIBatchCollateFunction
+    stop_epoch: 0
+    widths: []
+    mixup_prob: 0.0
+    mixup_epochs: [0, 0]
+
+# V2 diagnosis showed high-IoU localization, not classification, dominates
+# the remaining error. Raise both assignment and regression geometry weights.
+DEIMCriterion:
+  weight_dict:
+    loss_mal: 1
+    loss_bbox: 7.5
+    loss_giou: 3
+    loss_fgl: 0.15
+    loss_ddf: 1.5
+  matcher:
+    type: HungarianMatcher
+    weight_dict:
+      cost_class: 2
+      cost_bbox: 7.5
+      cost_giou: 3
+    alpha: 0.25
+    gamma: 2.0
+
+optimizer:
+  type: AdamW
+  params:
+    - params: '^(?=.*backbone)(?=.*p2_).*$'
+      lr: 0.00020
+    - params: '^(?=.*backbone)(?!.*p2_)(?=.*(?:proxy_|spectral_)).*$'
+      lr: 0.00005
+    - params: '^(?=.*backbone)(?!.*(?:p2_|proxy_|spectral_|norm|bn)).*$'
+      lr: 0.000002
+    - params: '^(?=.*backbone)(?!.*(?:p2_|proxy_|spectral_))(?=.*(?:norm|bn)).*$'
+      lr: 0.000002
+      weight_decay: 0.0
+    - params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.0
+  lr: 0.00005
+  betas: [0.9, 0.999]
+  weight_decay: 0.000125
+
+# Epoch 1000 and 100k updates are guards, not convergence claims. With 2x
+# weak-class exposure the two-GPU loader performs 127 optimizer updates/epoch.
+epoches: 1000
+gradient_accumulation_steps: 1
+max_optimizer_updates: 100000
+update_lr_schedule:
+  points:
+    - [0, 0.10]
+    - [800, 1.00]
+    - [8000, 1.00]
+    - [24000, 0.25]
+    - [34000, 0.05]
+    - [40000, 0.01]
+    - [50000, 0.005]
+
+# Earliest possible stop is after 50k updates plus ten low-LR validation
+# windows. Any meaningful gain in any diagnostic resets its own plateau clock.
+convergence:
+  min_optimizer_updates: 50000
+  patience_evals: 10
+  max_lr_ratio: 0.006
+  thresholds:
+    map_50_95: 0.0005
+    map_75: 0.0008
+    map_small: 0.0010
+    weak4_map_50_95: 0.0020
+
+# Seed global-best and convergence tracking with the exact zero-gate e228
+# baseline. The solver therefore preserves e228 as best.pth unless V3 beats it.
+resume_metrics:
+  map_50_95: 0.7122618032438272
+  map_75: 0.8369691926317677
+  map_small: 0.6783890745436440
+  weak4_map_50_95: 0.4546395264932519
+
+clip_max_norm: 0.1
+use_amp: true
+scaler:
+  type: GradScaler
+  # The stronger localization loss overflows DEIM's default 65536 scale for
+  # several startup batches; 1024 was the first verified finite update.
+  init_scale: 1024
+  growth_factor: 2.0
+  backoff_factor: 0.5
+  growth_interval: 2000
+  enabled: true
+use_ema: true
+sync_bn: true
+find_unused_parameters: false
+eval_every: 8
+checkpoint_freq: 24
+print_freq: 25
+output_dir: storage/v3/runs/hf_hsi_deim_x_fold0

@@ -33,6 +33,7 @@ from engine.data._misc import (
 )
 from engine.data.dataloader import BaseCollateFunction
 from engine.data.dataset._dataset import DetDataset
+from engine.data.transforms.container import Compose as DEIMCompose
 from engine.misc import MetricLogger, SmoothedValue, dist_utils
 from engine.optim.lr_scheduler import FlatCosineLRScheduler
 from engine.solver.det_engine import evaluate
@@ -306,6 +307,7 @@ class HSICocoDetection(torchvision.datasets.CocoDetection, DetDataset):
         transforms: Any,
         return_masks: bool = False,
         remap_mscoco_category: bool = False,
+        repeat_class_factors: Mapping[int, int] | None = None,
     ) -> None:
         if return_masks:
             raise ValueError("HOD26 is a bounding-box-only task")
@@ -321,6 +323,80 @@ class HSICocoDetection(torchvision.datasets.CocoDetection, DetDataset):
         self.ann_file = str(ann_file)
         self.return_masks = False
         self.remap_mscoco_category = False
+        self.base_image_count = len(self.ids)
+        self.repeat_class_factors = {
+            int(category_id): int(factor)
+            for category_id, factor in (repeat_class_factors or {}).items()
+        }
+        known_categories = {
+            int(category["id"]) for category in self.coco.dataset["categories"]
+        }
+        unknown_categories = (
+            set(self.repeat_class_factors) - known_categories
+        )
+        if unknown_categories:
+            raise ValueError(
+                "repeat_class_factors contains unknown category ids: "
+                f"{sorted(unknown_categories)}"
+            )
+        invalid_factors = {
+            category_id: factor
+            for category_id, factor in self.repeat_class_factors.items()
+            if factor < 1
+        }
+        if invalid_factors:
+            raise ValueError(
+                "repeat_class_factors values must be >= 1: "
+                f"{invalid_factors}"
+            )
+        if self.repeat_class_factors:
+            base_ids = list(self.ids)
+            repeated_ids: list[int] = []
+            affected_images = {
+                category_id: 0 for category_id in self.repeat_class_factors
+            }
+            repeat_histogram: dict[int, int] = {}
+            for image_id in base_ids:
+                annotations = self.coco.loadAnns(
+                    self.coco.getAnnIds(imgIds=image_id)
+                )
+                categories = {
+                    int(annotation["category_id"])
+                    for annotation in annotations
+                }
+                factor = max(
+                    (
+                        self.repeat_class_factors[category_id]
+                        for category_id in categories
+                        if category_id in self.repeat_class_factors
+                    ),
+                    default=1,
+                )
+                for category_id in categories:
+                    if category_id in affected_images:
+                        affected_images[category_id] += 1
+                repeated_ids.extend([image_id] * factor)
+                repeat_histogram[factor] = (
+                    repeat_histogram.get(factor, 0) + 1
+                )
+            self.ids = repeated_ids
+            print(
+                json.dumps(
+                    {
+                        "hsi_repeat_sampling": {
+                            "base_images": self.base_image_count,
+                            "effective_images": len(self.ids),
+                            "class_factors": self.repeat_class_factors,
+                            "class_image_counts": affected_images,
+                            "base_image_repeat_histogram": repeat_histogram,
+                            "maximum_repeat": max(
+                                self.repeat_class_factors.values()
+                            ),
+                        }
+                    },
+                    indent=2,
+                )
+            )
 
     @property
     def transforms(self) -> Any:
@@ -460,6 +536,44 @@ class HSISpectralAugment(nn.Module):
 @register()
 class HSIRandomVerticalFlip(T.RandomVerticalFlip):
     pass
+
+
+@register()
+class HSICompose(DEIMCompose):
+    """DEIM staged transforms with native support for HSIMosaic."""
+
+    def stop_epoch_forward(self, *inputs: Any):
+        sample = inputs if len(inputs) > 1 else inputs[0]
+        dataset = sample[-1]
+        current_epoch = dataset.epoch
+        policy_ops = self.policy["ops"]
+        policy_epochs = self.policy["epoch"]
+        if not (
+            isinstance(policy_epochs, list)
+            and len(policy_epochs) == 3
+        ):
+            return super().stop_epoch_forward(*inputs)
+
+        mosaic_enabled = (
+            policy_epochs[0] <= current_epoch < policy_epochs[1]
+            and random.random() <= self.mosaic_prob
+        )
+        for transform in self.transforms:
+            name = type(transform).__name__
+            scheduled = name in policy_ops
+            if scheduled and current_epoch < policy_epochs[0]:
+                continue
+            if scheduled and current_epoch >= policy_epochs[-1]:
+                continue
+            if name in {"Mosaic", "HSIMosaic"} and not mosaic_enabled:
+                continue
+            if (
+                name in {"RandomZoomOut", "RandomIoUCrop"}
+                and mosaic_enabled
+            ):
+                continue
+            sample = transform(sample)
+        return sample
 
 
 def _clone_target(target: dict[str, Any]) -> dict[str, Any]:
@@ -747,6 +861,160 @@ class HSIHGNetv2(HGNetv2):
             strict=True,
         ):
             residual = projection(spectral_feature)
+            gain = torch.tanh(gate).view(1, -1, 1, 1)
+            fused.append(rgb_feature + gain * residual)
+        return fused
+
+
+@register()
+class HFHSIHGNetv2(HSIHGNetv2):
+    """
+    HSIHGNetv2 with zero-start high-frequency P2 detail injection.
+
+    The pretrained V2 function is preserved exactly at initialization: all
+    newly introduced residual paths are multiplied by zero-initialized gates.
+    This lets V3 start from the submitted e228 model instead of relearning the
+    detector while still exposing stride-4 spatial and spectral evidence to
+    the stride-8 feature consumed by D-FINE.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        input_bands: int = 16,
+        spectral_channels: Sequence[int] = (64, 96, 128, 192),
+        use_lab: bool = False,
+        return_idx: Sequence[int] = (1, 2, 3),
+        freeze_stem_only: bool = False,
+        freeze_at: int = -1,
+        freeze_norm: bool = False,
+        pretrained: bool = False,
+        local_model_dir: str = "storage/pretrained/v2/hgnetv2/",
+        detail_context_ratio: int = 8,
+    ) -> None:
+        super().__init__(
+            name=name,
+            input_bands=input_bands,
+            spectral_channels=spectral_channels,
+            use_lab=use_lab,
+            return_idx=return_idx,
+            freeze_stem_only=freeze_stem_only,
+            freeze_at=freeze_at,
+            freeze_norm=freeze_norm,
+            pretrained=pretrained,
+            local_model_dir=local_model_dir,
+        )
+        if tuple(int(index) for index in return_idx) != (1, 2, 3):
+            raise ValueError(
+                "HFHSIHGNetv2 requires return_idx [1, 2, 3]"
+            )
+        if detail_context_ratio < 1:
+            raise ValueError("detail_context_ratio must be >= 1")
+
+        spectral_channels = tuple(
+            int(value) for value in spectral_channels
+        )
+        p2_channels = int(self._out_channels[0])
+        p3_channels = int(self._out_channels[1])
+        context_channels = max(32, p3_channels // detail_context_ratio)
+
+        self.p2_spectral_projection = nn.Sequential(
+            nn.Conv2d(
+                spectral_channels[0],
+                p2_channels,
+                1,
+                bias=False,
+            ),
+            nn.GroupNorm(math.gcd(p2_channels, 32), p2_channels),
+        )
+        self.p2_spectral_gate = nn.Parameter(torch.zeros(p2_channels))
+
+        self.p2_detail_downsample = nn.Sequential(
+            nn.Conv2d(
+                p2_channels,
+                p2_channels,
+                3,
+                2,
+                1,
+                groups=p2_channels,
+                bias=False,
+            ),
+            nn.GroupNorm(math.gcd(p2_channels, 32), p2_channels),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(p2_channels, p3_channels, 1, bias=False),
+            nn.GroupNorm(math.gcd(p3_channels, 32), p3_channels),
+        )
+        self.p2_context_gate = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(p3_channels, context_channels, 1),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(context_channels, p3_channels, 1),
+        )
+        self.p2_detail_gate = nn.Parameter(torch.zeros(p3_channels))
+        nn.init.zeros_(self.p2_context_gate[-1].weight)
+        nn.init.zeros_(self.p2_context_gate[-1].bias)
+
+    @staticmethod
+    def _match_spatial(
+        feature: torch.Tensor,
+        reference: torch.Tensor,
+    ) -> torch.Tensor:
+        if feature.shape[-2:] == reference.shape[-2:]:
+            return feature
+        return F.interpolate(
+            feature,
+            size=reference.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+        )
+
+    def forward(self, x: torch.Tensor):
+        proxy = self.proxy_projection(x) + self.proxy_refine(x)
+        proxy = (proxy - self.image_mean) / self.image_std
+
+        spectral_p2 = self.spectral_stem(x)
+        spectral_outputs = []
+        spectral = spectral_p2
+        for level in self.spectral_levels:
+            spectral = level(spectral)
+            spectral_outputs.append(spectral)
+
+        rgb = self.stem(proxy)
+        rgb_outputs = []
+        fused_p2: torch.Tensor | None = None
+        for index, stage in enumerate(self.stages):
+            rgb = stage(rgb)
+            if index == 0:
+                p2_spectral = self.p2_spectral_projection(spectral_p2)
+                p2_spectral = self._match_spatial(p2_spectral, rgb)
+                p2_gain = torch.tanh(self.p2_spectral_gate).view(
+                    1, -1, 1, 1
+                )
+                rgb = rgb + p2_gain * p2_spectral
+                fused_p2 = rgb
+            elif index == 1:
+                if fused_p2 is None:
+                    raise RuntimeError("P2 detail source was not constructed")
+                detail = self.p2_detail_downsample(fused_p2)
+                detail = self._match_spatial(detail, rgb)
+                context = 2.0 * torch.sigmoid(self.p2_context_gate(rgb))
+                detail_gain = torch.tanh(self.p2_detail_gate).view(
+                    1, -1, 1, 1
+                )
+                rgb = rgb + detail_gain * context * detail
+            if index in self.return_idx:
+                rgb_outputs.append(rgb)
+
+        fused = []
+        for rgb_feature, spectral_feature, projection, gate in zip(
+            rgb_outputs,
+            spectral_outputs,
+            self.spectral_projections,
+            self.spectral_gates,
+            strict=True,
+        ):
+            residual = projection(spectral_feature)
+            residual = self._match_spatial(residual, rgb_feature)
             gain = torch.tanh(gate).view(1, -1, 1, 1)
             fused.append(rgb_feature + gain * residual)
         return fused
@@ -1117,6 +1385,19 @@ class HSIDetSolver(DetSolver):
             schedule_cfg["points"],
         )
         expected_ratio = scheduler.ratio_at(self.optimizer_updates)
+        fresh_tuning_start = (
+            self.optimizer_updates == 0
+            and not self._loaded_v2_training_state
+            and not self.cfg.resume
+        )
+        if fresh_tuning_start:
+            scheduler.step(0, self.optimizer)
+            self._active_lr_schedule_points = [
+                [int(update), float(ratio)]
+                for update, ratio in scheduler.points
+            ]
+            self._current_lr_ratio = expected_ratio
+            return scheduler
         actual_ratios = [
             float(group["lr"])
             / float(group.get("initial_lr", group["lr"]))
