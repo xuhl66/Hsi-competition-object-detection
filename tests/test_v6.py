@@ -30,6 +30,7 @@ from hod26.v6.data import (  # noqa: E402
     four_scene_mosaic,
 )
 from hod26.v6.infer import _gaussian_soft_nms  # noqa: E402
+from hod26.v6.raw_infer import _restore_native_result  # noqa: E402
 from hod26.v6.model import (  # noqa: E402
     BidirectionalDeformableFusion,
     HOD26V6AlignCoDINOHead,
@@ -192,6 +193,25 @@ def test_gaussian_soft_nms_protocol_is_frozen() -> None:
     }
 
 
+def test_raw_protocol_preserves_native_result_without_external_nms() -> None:
+    result = [np.zeros((0, 5), np.float32) for _ in range(18)]
+    result[5] = np.asarray([[10, 20, 30, 40, 0.75]], np.float32)
+    restored = _restore_native_result(
+        result, sx=2.0, sy=2.0, width=100, height=80
+    )
+    np.testing.assert_allclose(
+        restored[5], np.asarray([[5, 10, 15, 20, 0.75]], np.float32)
+    )
+    assert sum(len(value) for value in restored) == 1
+
+
+def test_raw_protocol_rejects_non_native_global_detection_count() -> None:
+    result = [np.zeros((0, 5), np.float32) for _ in range(18)]
+    result[5] = np.tile(np.asarray([[1, 2, 3, 4, 0.1]], np.float32), (301, 1))
+    with pytest.raises(RuntimeError, match="global max300"):
+        _restore_native_result(result, sx=1.0, sy=1.0, width=10, height=10)
+
+
 def test_update_schedule_and_optimizer_families_are_explicit() -> None:
     points = [(0, 0.02), (1500, 1.0), (6000, 1.0), (96000, 0.004)]
     assert piecewise_cosine_ratio(0, points) == 0.02
@@ -270,9 +290,12 @@ def test_all_launches_detach_from_ssh_and_inference_selects_stats() -> None:
         assert "tty=" in source.lower() or "TTY=" in source
     infer_source = (REPO_ROOT / "src/hod26/v6/infer.py").read_text(encoding="utf-8")
     infer_launcher = (REPO_ROOT / "tools/infer_v6_champion.sh").read_text(encoding="utf-8")
+    raw_launcher = (REPO_ROOT / "tools/infer_v6_raw.sh").read_text(encoding="utf-8")
     full_train = (REPO_ROOT / "tools/train_v6_full.sh").read_text(encoding="utf-8")
     full_launch = (REPO_ROOT / "tools/launch_v6_full_detached.sh").read_text(encoding="utf-8")
     assert "hod26.v6.load_gate resume" in infer_launcher
+    assert "hod26.v6.load_gate resume" in raw_launcher
+    assert "hod26.v6.raw_infer" in raw_launcher
     assert "V6_FULL_AUDIT_ONLY" in full_train
     assert "co_spec_dino_vitl_(fold0|full).py" in full_launch
     assert 'stats_path: str | Path = "auto"' in infer_source
