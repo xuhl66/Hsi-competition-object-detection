@@ -5,6 +5,7 @@ import inspect
 import math
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import numpy as np
@@ -26,6 +27,7 @@ from hod26.v6.constants import (  # noqa: E402
 )
 from hod26.v6.data import (  # noqa: E402
     HOD26V6FixedSensorShift,
+    HOD26V6StagedAugment,
     apply_fixed_sensor_shift,
     four_scene_mosaic,
 )
@@ -42,6 +44,14 @@ from hod26.v6.model import (  # noqa: E402
     effective_number_class_weights,
 )
 from hod26.v6.hooks import HOD26V6EMAHook  # noqa: E402
+from hod26.v6.full import (  # noqa: E402
+    FULL_CANDIDATE_EPOCHS,
+    FULL_CLASS_COUNTS,
+    FULL_LR_POINTS,
+    FULL_STAGE_UPDATES,
+    HOD26V6FullDataContractHook,
+    _set_exposure_updates,
+)
 from hod26.v6.optim import (  # noqa: E402
     _is_new_v6_parameter,
     piecewise_cosine_ratio,
@@ -264,6 +274,70 @@ def test_formal_fold0_and_full_data_contracts() -> None:
     assert tuple(full.data.train.pipeline[2].widths.polish) == (1280,)
     assert full.evaluation.interval == 999999
 
+    scratch = Config.fromfile(
+        str(REPO_ROOT / "configs/v6/co_spec_dino_vitl_full_scratch.py")
+    )
+    assert scratch.data.train.ann_file.endswith("/full.json")
+    assert scratch.data.train.pipeline[0].stats_file.endswith(
+        "/full_band_stats.json"
+    )
+    assert tuple(scratch.data.train.pipeline[2].stage_updates) == FULL_STAGE_UPDATES
+    assert scratch.data.train.pipeline[2].mosaic_probability == 0.25
+    assert scratch.model.neck.fusion_open_updates == 7500
+    assert scratch.runner.max_epochs * 1500 == 120000
+    assert tuple(tuple(point) for point in scratch.lr_config.points) == FULL_LR_POINTS
+    assert scratch.checkpoint_config.interval == 2
+    assert scratch.checkpoint_config.max_keep_ckpts == -1
+    assert scratch.evaluation.interval == 999999
+    assert scratch.custom_hooks[1].type == "HOD26V6EMAHook"
+    assert scratch.custom_hooks[1].total_iter == 2500
+    assert scratch.custom_hooks[3].type == "HOD26V6FullDataContractHook"
+    assert tuple(scratch.custom_hooks[3].candidate_epochs) == FULL_CANDIDATE_EPOCHS
+    assert scratch.custom_hooks[4].source_lock.endswith(
+        "runtime_source_lock_full_scratch.json"
+    )
+
+
+def test_full_class_weights_and_exposure_stages_are_data_exact() -> None:
+    assert FULL_CLASS_COUNTS == (
+        447, 493, 1375, 621, 369, 565, 355, 451, 461,
+        475, 658, 258, 184, 310, 1095, 977, 272, 700,
+    )
+    fold_weights = effective_number_class_weights()
+    full_weights = effective_number_class_weights(FULL_CLASS_COUNTS)
+    assert not torch.equal(fold_weights, full_weights)
+    assert float(full_weights[16]) > float(full_weights[2])
+
+    augment = HOD26V6StagedAugment(
+        stage_updates=FULL_STAGE_UPDATES,
+        mosaic_probability=0.25,
+    )
+    changed = _set_exposure_updates(augment, 70500, set())
+    assert changed == 1
+    assert augment.successful_updates == 70500
+    assert augment.stage == "clean"
+
+
+def test_full_contract_is_seeded_into_mmcv_runner_metadata() -> None:
+    runner = SimpleNamespace(
+        model=SimpleNamespace(
+            query_head=SimpleNamespace(hod26_class_weights=torch.zeros(18)),
+            bbox_head=[SimpleNamespace(hod26_class_weights=torch.zeros(18))],
+        ),
+        meta=None,
+    )
+    hook = HOD26V6FullDataContractHook(expected_images=8, updates_per_epoch=4)
+    hook.before_run(runner)
+    assert runner.meta["hod26_v6_full_training_mode"] == (
+        "public_init_all3000_complete_retrain"
+    )
+    assert runner.meta["hod26_v6_full_updates_per_epoch"] == 4
+    assert runner.meta["hod26_v6_full_candidate_updates"] == [136, 160, 184, 208, 240]
+    expected = effective_number_class_weights(FULL_CLASS_COUNTS)
+    torch.testing.assert_close(
+        runner.model.query_head.hod26_class_weights, expected, rtol=0, atol=0
+    )
+
 
 def test_direct_spectral_proposal_is_not_a_renamed_visual_route() -> None:
     source = inspect.getsource(HOD26V6CoSpecDINO.forward_train)
@@ -283,7 +357,11 @@ def test_v6_is_independent_and_uses_only_one_public_checkpoint() -> None:
 
 
 def test_all_launches_detach_from_ssh_and_inference_selects_stats() -> None:
-    for name in ("launch_v6_detached.sh", "launch_v6_full_detached.sh"):
+    for name in (
+        "launch_v6_detached.sh",
+        "launch_v6_full_detached.sh",
+        "launch_v6_full_scratch_detached.sh",
+    ):
         source = (REPO_ROOT / "tools" / name).read_text(encoding="utf-8")
         assert "nohup setsid env" in source
         assert "</dev/null" in source
@@ -293,10 +371,20 @@ def test_all_launches_detach_from_ssh_and_inference_selects_stats() -> None:
     raw_launcher = (REPO_ROOT / "tools/infer_v6_raw.sh").read_text(encoding="utf-8")
     full_train = (REPO_ROOT / "tools/train_v6_full.sh").read_text(encoding="utf-8")
     full_launch = (REPO_ROOT / "tools/launch_v6_full_detached.sh").read_text(encoding="utf-8")
+    scratch_train = (REPO_ROOT / "tools/train_v6_full_scratch.sh").read_text(
+        encoding="utf-8"
+    )
+    scratch_launch = (
+        REPO_ROOT / "tools/launch_v6_full_scratch_detached.sh"
+    ).read_text(encoding="utf-8")
     assert "hod26.v6.load_gate resume" in infer_launcher
     assert "hod26.v6.load_gate resume" in raw_launcher
     assert "hod26.v6.raw_infer" in raw_launcher
     assert "V6_FULL_AUDIT_ONLY" in full_train
     assert "co_spec_dino_vitl_(fold0|full).py" in full_launch
+    assert "V6_FULL_SCRATCH_AUDIT_ONLY" in scratch_train
+    assert "hod26.v6.full_gate public_init" in scratch_train
+    assert "--no-validate" in scratch_train
+    assert "co_spec_dino_vitl_(fold0|full|full_scratch).py" in scratch_launch
     assert 'stats_path: str | Path = "auto"' in infer_source
     assert "hod26_v6_full_data_stage" in infer_source

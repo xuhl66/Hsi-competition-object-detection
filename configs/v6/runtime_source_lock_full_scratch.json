@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "version": "v6",
+  "purpose": "fail_closed_all3000_public_initialized_training_and_inference",
+  "files": {
+    "configs/v6/candidate_manifest_full_scratch.yaml": "13af49bfe0955ca047d5d64afe464aea5a259d5eaf417170ff4065892668b20c",
+    "configs/v6/co_spec_dino_vitl_fold0.py": "deffb5c7fcb845a3ce0c741a9075a1b201487c94e7c221f27114076f0f3f9f14",
+    "configs/v6/co_spec_dino_vitl_full_scratch.py": "4a8b72c0c24e99706b22beab6ad08e564b67444c9656250647df12ffed0bac75",
+    "configs/v6/co_spec_dino_vitl_full_scratch_smoke.py": "822f6c42c4687719c403418894f81e4054a12142a806ae5465b6cff0c0d8a668",
+    "src/hod26/v6/__init__.py": "8a3d560e3697a0d71a5bade187282aadcd6817fabc5a600b805e44fb168da61b",
+    "src/hod26/v6/checkpoint.py": "746c4b0a46bbcec2d1378d7b856c261570e52399515ff6dc46f77bf333f7469f",
+    "src/hod26/v6/compat.py": "4e79ad5e3111fe04876ae627c8708d7b0819c488559200a7a87a2ad55aaa343a",
+    "src/hod26/v6/constants.py": "b364dc24139c301bd770bf7e57e7fdae3bb900e3681414294d159410a44de0d0",
+    "src/hod26/v6/data.py": "5a0ef15a0a73546ac95723075fd0f0c792a660fb4d75ffd3d127b36b38908513",
+    "src/hod26/v6/evaluate.py": "bc800f3d277fecc65696dccbd7473ad6e54b3b0479663954500039241b2ef3b6",
+    "src/hod26/v6/full.py": "811c02d8437b43be1f5adc1da382239b0997d69b37dc12ae0c44bf40d1cb3d47",
+    "src/hod26/v6/full_gate.py": "a2955e74ac8a21b6802fad10480005514c01bf667ba98a4120e8a56e54e82d2b",
+    "src/hod26/v6/hooks.py": "f9e2f5ae079cfd40cfd00758497becc115ae7bfca7a4b6bb157dbf7dd5ff82cd",
+    "src/hod26/v6/infer.py": "18be6c398a6fd24a5db9a9dd36ea38d6bc8cc4e98e3dab2ed9e7e97b11947b23",
+    "src/hod26/v6/load_gate.py": "6d5e0d45e2d7a88359716244891de97aa68eb638bd6441621eb0e50fc9e28a5a",
+    "src/hod26/v6/model.py": "2cf87ca4dea1be861c0eb1feff51e713f727969b1907628e93ad74b290d1edeb",
+    "src/hod26/v6/optim.py": "bcab824072ae8451c4d13406684d48bf2fa97ac2c7ef7d2296c902642ca24e05",
+    "src/hod26/v6/prepare.py": "a5120ce9ae259849fbbda89964b26a658e88fb93b59101c025b7803f5b83cd79",
+    "src/hod26/v6/raw_infer.py": "ef4bf836f55418fcf96faf4576bf734f086f568b034c482728c74d047eb7a02a",
+    "tools/eval_v6_promotion.sh": "9c6e6a2663a5911a2788b65bf43a6e26de4c63ac61c06b9ecdabb24c84bcf2a1",
+    "tools/infer_v6_champion.sh": "db9d6be729d579fea63a49009adbd9f64feb6426b9a2f2c590490cc2ee9a3d64",
+    "tools/infer_v6_raw.sh": "007c191acfc73f61568a921ee1af863a46926b70ffbdaaf1902f48c1a00824e9",
+    "tools/launch_v6_full_scratch_detached.sh": "bce34727fd19e87a0c8fb377be56e2f09e964200535917751513c5beec104ccf",
+    "tools/prepare_v6.sh": "3071e9a2187a441f17fc50a7edeaeb604f1ec41fc3ba7a37b71b5d9cc84c5f6c",
+    "tools/smoke_v6_full_scratch.sh": "0571713b365daaaf6464d5723589be8028b20a858bfefbbe82db7baa154a9801",
+    "tools/train_v6_full_scratch.sh": "5336cc1985f5dbbd1fd6574eddc8315128b03874e80973be3b8aa02d3567d2db"
+  },
+  "upstream": {
+    "path": "storage/upstream/Co-DETR",
+    "commit": "26653521e47157fdd819e764b4bb949057ea9f3b",
+    "working_diff_sha256": "60ba8524725e45e6aa5f5adf5dfcf3febf1daefbe19a3b933b48794ab81eb63f"
+  }
+}

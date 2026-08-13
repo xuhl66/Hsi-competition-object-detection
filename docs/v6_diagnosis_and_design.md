@@ -357,14 +357,17 @@ V6 不包含：FDR、GO-LSD、LQE、coarse-box anchor、V5 salience、V5 transit
 
 ### 6.2 全 3,000 官方图阶段
 
-fold0 可信收敛并选定单一 V6 checkpoint 后，已确认在同一 V6 lineage 内恢复完整
-optimizer/EMA，把 600 张 held-out 图加入训练，用低学习率 clean schedule 继续。
-新增 successful updates 取“fold0 最佳 successful updates 的 20%”，对应新增
-20% 数据曝光；到时固定整数和 SHA，不凭感觉指定 epoch。
+2026-08-13 经用户确认，Full 主线改为从唯一公开 Co-DINO checkpoint
+初始化，在全部 3,000 张官方标注图上完整重训 V6 全模型。V6 Fold0
+e34、V4/V5/V5R、Soup/SWA 均不进入该 lineage。旧 e34 低学习率
+continuation 实现原样保留为备份，不再是 Full 主线。
 
-这仍是一个模型的一套连续训练配方：外部祖先只有公开 Co-DINO，V4/V5/V5R
-不在 lineage 中。若为了最简单的审查叙述坚持从公开 checkpoint 在 3,000 图上
-重新训练，则需额外再跑一条完整长训且没有 final holdout；当前不采用该路线。
+Full 以 1,500 attempted updates/epoch 运行 80 epoch / 120,000 attempted
+updates 软上限。Fold0 的学习率、融合、增强和 EMA 时间尺度按每张图曝光
+等比放大 `3000/2400=1.25`。预先锁定 e34/e40/e46/e52/e60，并训练到
+e80 保留完整窗口。不保留 200 张 sentinel：它只能发现崩溃，无法可靠选择
+18 类 macro mAP checkpoint。详细门禁和启动命令见
+`docs/v6_full_scratch_contract.md`。
 
 ### 6.3 最终工程放行证据
 
@@ -439,9 +442,10 @@ Git 分支保留历史不影响提交独立性；审查方拿到的是上述导�
    预训练。此前用户已授权在主办方未回复时继续这条提分路线，所以 V6 按公开
    Co-DINO 实施；但进入最终获奖审查前仍应取得书面许可。若明确禁止，必须切换
    同架构的 official-data-only 初始化，V4 也会面临同一资格风险。
-2. **最终全数据血缘已确认**：采用“V6 fold0 可信收敛 → 同一 V6 完整状态继续
-   3,000 图”，严格继承 model/EMA/AdamW/scaler；不得从当前 smoke checkpoint
-   进入 full，必须使用最终晋级且已收敛的 Fold0 checkpoint。
+2. **最终全数据血缘已更新**：采用“唯一公开 Co-DINO → 全 3,000 图完整
+   V6 重训”。不得从 Fold0 e34、smoke、V4/V5/V5R 或任何 Soup/SWA
+   checkpoint 进入 Full scratch；普通 resume 则必须完整恢复该 Full lineage 的
+   model/EMA/AdamW/scaler。
 3. **SpecDETR 权重继续禁用**：只采用其公开架构思想，不加载 SPOD checkpoint，
    保持唯一外部权重来源；不再等待用户确认。
 4. **显存门禁已通过**：最终 1280×640 双卡 exact smoke 峰值为

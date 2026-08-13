@@ -1,0 +1,66 @@
+version: v6-full-scratch
+candidate: cospec_dino_vitl_all3000_public_init
+status: ready_for_user_launch_exact_smoke_and_audit_passed
+branch: agent/v6-independent
+
+objective:
+  primary: kaggle_private_map_50_95
+  submission_model_count: 1
+
+initialization:
+  external_checkpoint_count: 1
+  source: official_public_co_dino_vitl_objects365_to_coco
+  sha256: 733d2ccde180a55151a68a6cab7c9f42b117d24d38d6197b37caf3189243256c
+  optimizer: fresh
+  ema: fresh_post_successful_optimizer_step
+  fp16_scaler: fresh
+  prohibited_parents:
+    - v6_fold0_epoch34
+    - any_v4_checkpoint
+    - any_v5_or_v5r_checkpoint
+    - soup_or_swa_checkpoint
+
+data:
+  official_labeled_images: 3000
+  held_out_images: 0
+  sentinel_images: 0
+  updates_per_epoch_global_batch_two: 1500
+  class_weight_scope: all_3000_annotations
+
+training:
+  trainable_scope: full_368_12m_parameter_model
+  soft_horizon_epochs: 80
+  soft_horizon_attempted_updates: 120000
+  lr_coordinate: successful_adamw_updates
+  augmentation_coordinate: completed_all3000_dataset_passes
+  lr_points:
+    - [0, 0.02]
+    - [1875, 1.00]
+    - [7500, 1.00]
+    - [70500, 0.30]
+    - [100500, 0.06]
+    - [115000, 0.015]
+    - [120000, 0.004]
+  stages:
+    - {name: stabilize, exposure_updates: [0, 7500]}
+    - {name: capacity_mosaic, exposure_updates: [7500, 70500]}
+    - {name: clean, exposure_updates: [70500, 100500]}
+    - {name: polish, exposure_updates: [100500, 120000]}
+  validation: disabled_all_labeled_images_are_training_data
+  checkpoint_interval_epochs: 2
+  checkpoint_retention: unlimited
+  predeclared_candidates:
+    - {epoch: 34, attempted_updates: 51000, role: primary}
+    - {epoch: 40, attempted_updates: 60000, role: backup}
+    - {epoch: 46, attempted_updates: 69000, role: backup}
+    - {epoch: 52, attempted_updates: 78000, role: backup}
+    - {epoch: 60, attempted_updates: 90000, role: backup}
+
+selection:
+  source: completed_v6_fold0_2400_train_600_validation_curve
+  rule: predeclared_exposure_matched_window_not_training_loss
+  public_leaderboard: final_confirmation_only_not_epoch_search
+
+fallback:
+  retained_but_not_selected: v6_e34_stateful_all3000_low_lr_continuation
+  reason: lower_cost_and_lower_expected_ceiling_due_to_asymmetric_exposure

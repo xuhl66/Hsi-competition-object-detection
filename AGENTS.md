@@ -128,3 +128,15 @@ lineage。修复版必须使用独立且有 matching+DN 损失的 pre-bbox head�
 - 所有项目改动只在本仓库目录及其已挂载的 `storage` 路径内完成。
 - 每次正式训练前必须报告：初始化权重、总 optimizer updates、调度阶段、验证与
   checkpoint 频率、可续训设计、预计耗时及停止条件。
+
+## V6 Full 全数据决策（冻结）
+
+- Full 主线从经审计的公开 Co-DINO ViT-L 权重开始，在全部 3,000 张
+  官方标注图上完整训练 V6 全模型；不继承 V6 Fold0 e34，不使用 200 张
+  sentinel 选 checkpoint。旧 e34 低学习率 continuation 仅作备份。
+- global batch 2 时为 1,500 attempted updates/epoch；默认 80 epoch / 120,000
+  attempted updates 软上限。LR、融合和 EMA 按 successful updates 前进，数据增强
+  按已完成的全数据曝光轮次切换。
+- 预先锁定 e34/e40/e46/e52/e60 为候选，其中 e34 为主候选；完整训到 e80
+  但不把最后一轮默认为最佳。Full 没有独立验证集，训练 loss 不得用于宣称
+  泛化最优。
